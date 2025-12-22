@@ -1,5 +1,6 @@
 'use client';
 import { useState, useRef, useCallback } from 'react';
+import MatchingEngine from '@/components/MatchingEngine';
 
 interface TranscriptSegment {
   start: number;
@@ -323,6 +324,16 @@ export default function STTPage() {
                 </div>
               </div>
             )}
+
+            {/* Matching Engine */}
+            {analysisResult && (
+              <MatchingEngine
+                aiSoap={analysisResult.soap}
+                aiIcd={analysisResult.icdCodes}
+                medicalAdvice={analysisResult.medicalAdvice}
+              />
+            )}
+
           </div>
 
         </div>

@@ -11,7 +11,7 @@ const KNOWLEDGE_BASE_PATH = path.join(process.cwd(), "data", "knowledge_base", "
 
 export class MedicalVectorStore {
     private store: MemoryVectorStore | null = null;
-    private embeddings: GoogleGenerativeAIEmbeddings;
+    public readonly embeddings: GoogleGenerativeAIEmbeddings;
 
     constructor() {
         if (!process.env.GOOGLE_API_KEY) {
