@@ -16,22 +16,38 @@ interface STTResponse {
   num_speakers: number;
 }
 
+interface AnalysisResult {
+  soap: {
+    subjective: string;
+    objective: string;
+    assessment: string;
+    plan: string;
+  };
+  icdCodes: string[];
+  medicalAdvice: string;
+  references: string[];
+}
+
 export default function STTPage() {
   const [isRecording, setIsRecording] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // STT loading
+  const [analyzing, setAnalyzing] = useState(false); // Agent loading
   const [transcripts, setTranscripts] = useState<TranscriptSegment[]>([]);
-  const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'partial' | 'error'>('checking');
+  const [fullText, setFullText] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
+  const [activeTab, setActiveTab] = useState<'soap' | 'advice' | 'icd'>('soap');
+
+  const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'error'>('checking');
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  // Check service status on mount
+  // Check service status
   const checkServiceStatus = useCallback(async () => {
     try {
       const res = await fetch('/api/stt');
       const data = await res.json();
-
       if (data.services?.groq_stt === 'configured') {
         setServiceStatus('ready');
       } else {
@@ -42,29 +58,19 @@ export default function STTPage() {
     }
   }, []);
 
-  // Check on first render
   useState(() => {
     checkServiceStatus();
   });
 
   const startRecording = async () => {
+    setAnalysisResult(null); // Reset prev analysis
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          channelCount: 1,
-          sampleRate: 16000,
-          echoCancellation: true,
-          noiseSuppression: true
-        }
+        audio: { channelCount: 1, sampleRate: 16000, echoCancellation: true, noiseSuppression: true }
       });
 
       streamRef.current = stream;
-
-      // Use webm for better compatibility
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm')
-        ? 'audio/webm'
-        : 'audio/mp4';
-
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : 'audio/mp4';
       mediaRecorderRef.current = new MediaRecorder(stream, { mimeType });
 
       mediaRecorderRef.current.ondataavailable = (e) => {
@@ -80,8 +86,8 @@ export default function STTPage() {
       mediaRecorderRef.current.start();
       setIsRecording(true);
     } catch (err) {
-      console.error('Recording error:', err);
-      alert("Vui lòng cấp quyền micro để sử dụng tính năng này.");
+      console.error(err);
+      alert("Vui lòng cấp quyền micro!");
     }
   };
 
@@ -100,217 +106,229 @@ export default function STTPage() {
       const res = await fetch('/api/stt', { method: 'POST', body: formData });
       const data: STTResponse = await res.json();
 
-      if (data.success && data.segments.length > 0) {
-        setTranscripts(prev => [...prev, ...data.segments]);
-      } else if (data.success && data.raw_text) {
-        // Fallback if no segments but has raw text
-        setTranscripts(prev => [...prev, {
-          start: 0,
-          end: 0,
-          speaker: 'SPEAKER_00',
-          role: 'Người nói',
-          raw_text: data.raw_text,
-          clean_text: data.raw_text
-        }]);
+      if (data.success) {
+        setTranscripts(data.segments);
+        setFullText(data.raw_text);
       }
     } catch (err) {
       console.error(err);
-      alert("Lỗi kết nối hệ thống!");
+      alert("Lỗi xử lý audio!");
     } finally {
       setLoading(false);
     }
   };
 
-  // Get speaker style based on LLM-detected role
+  const runDeepAnalysis = async () => {
+    if (!fullText) return;
+    setAnalyzing(true);
+    try {
+      const res = await fetch('/api/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transcript: fullText })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setAnalysisResult(data.data);
+      } else {
+        alert("Lỗi phân tích: " + data.error);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("Không thể kết nối tới Agent Orchestrator");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // Helper for styles
   const getSpeakerStyle = (role: string) => {
-    // Normalize role for comparison
     const normalizedRole = role.toLowerCase().trim();
-
     if (normalizedRole.includes('bác sĩ') || normalizedRole === 'doctor') {
-      return {
-        label: '👨‍⚕️ Bác sĩ',
-        bgColor: 'bg-gradient-to-r from-blue-50 to-indigo-50',
-        borderColor: 'border-blue-500',
-        textColor: 'text-blue-800',
-        labelBg: 'bg-blue-100',
-        icon: '🩺'
-      };
+      return { label: '👨‍⚕️ Bác sĩ', bgColor: 'bg-gradient-to-r from-blue-50 to-indigo-50', borderColor: 'border-blue-500', textColor: 'text-blue-800', labelBg: 'bg-blue-100' };
     } else if (normalizedRole.includes('bệnh nhân') || normalizedRole === 'patient') {
-      return {
-        label: '🧑 Bệnh nhân',
-        bgColor: 'bg-gradient-to-r from-green-50 to-emerald-50',
-        borderColor: 'border-green-500',
-        textColor: 'text-green-800',
-        labelBg: 'bg-green-100',
-        icon: '💬'
-      };
+      return { label: '🧑 Bệnh nhân', bgColor: 'bg-gradient-to-r from-green-50 to-emerald-50', borderColor: 'border-green-500', textColor: 'text-green-800', labelBg: 'bg-green-100' };
     }
-    // Default for unknown roles
-    return {
-      label: '💬 ' + role,
-      bgColor: 'bg-gray-50',
-      borderColor: 'border-gray-400',
-      textColor: 'text-gray-700',
-      labelBg: 'bg-gray-100',
-      icon: '💬'
-    };
+    return { label: '💬 ' + role, bgColor: 'bg-gray-50', borderColor: 'border-gray-400', textColor: 'text-gray-700', labelBg: 'bg-gray-100' };
   };
-
-  const getStatusIndicator = () => {
-    switch (serviceStatus) {
-      case 'ready':
-        return { color: 'bg-green-500', text: 'AI Services Ready (Whisper STT + LLM)' };
-      case 'error':
-        return { color: 'bg-red-500', text: 'Lỗi kết nối dịch vụ' };
-      default:
-        return { color: 'bg-gray-400', text: 'Đang kiểm tra...' };
-    }
-  };
-
-  const status = getStatusIndicator();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
-      <div className="p-8 max-w-4xl mx-auto font-sans">
-        {/* Header */}
-        <header className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center text-white text-2xl shadow-lg">
-              🏥
-            </div>
-            <div>
-              <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-700 to-blue-900 bg-clip-text text-transparent">
-                MEA - Medical Examination Assistant
-              </h1>
-              <p className="text-gray-500">
-                Hệ thống trợ lý ghi chép và hỗ trợ chẩn đoán lâm sàng
-              </p>
-            </div>
-          </div>
+    <div className="min-h-screen bg-slate-50 font-sans pb-20">
+      <div className="p-8 max-w-6xl mx-auto">
 
-          {/* Status indicator */}
-          <div className="mt-4 flex items-center gap-2 p-3 bg-white rounded-lg shadow-sm border border-gray-100">
-            <span className={`w-3 h-3 rounded-full ${status.color} animate-pulse`}></span>
-            <span className="text-sm text-gray-600">{status.text}</span>
-            <button
-              onClick={checkServiceStatus}
-              className="ml-auto text-xs text-blue-600 hover:underline"
-            >
-              Kiểm tra lại
-            </button>
+        {/* Header */}
+        <header className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-extrabold bg-gradient-to-r from-blue-700 to-indigo-800 bg-clip-text text-transparent">
+              MEA - Medical Assistant
+            </h1>
+            <p className="text-gray-500">Trợ lý y khoa thông minh (Multi-Agent System)</p>
+          </div>
+          <div className={`px-3 py-1 rounded-full text-xs font-bold ${serviceStatus === 'ready' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+            {serviceStatus === 'ready' ? 'System Ready' : 'Service Error'}
           </div>
         </header>
 
-        {/* Recording Controls */}
-        <div className="flex gap-4 mb-8">
+        {/* Controls */}
+        <div className="flex gap-4 mb-6">
           {!isRecording ? (
-            <button
-              onClick={startRecording}
-              disabled={loading}
-              className="bg-gradient-to-r from-red-500 to-red-600 text-white px-8 py-4 rounded-2xl hover:from-red-600 hover:to-red-700 transition-all shadow-lg hover:shadow-xl disabled:opacity-50 flex items-center gap-3 font-medium"
-            >
-              <span className="w-4 h-4 bg-white rounded-full animate-pulse"></span>
-              Bắt đầu ghi âm cuộc hội thoại
+            <button onClick={startRecording} disabled={loading || analyzing}
+              className="bg-blue-600 text-white px-6 py-3 rounded-xl hover:bg-blue-700 transition shadow-lg flex items-center gap-2 font-bold disabled:opacity-50">
+              🎙️ Bắt đầu khám
             </button>
           ) : (
-            <button
-              onClick={stopRecording}
-              className="bg-gradient-to-r from-gray-700 to-gray-900 text-white px-8 py-4 rounded-2xl hover:from-gray-800 hover:to-black transition-all shadow-lg hover:shadow-xl flex items-center gap-3 font-medium"
-            >
-              <span className="w-4 h-4 bg-red-500 rounded-sm"></span>
-              Dừng & Phân tích (Groq AI)
+            <button onClick={stopRecording}
+              className="bg-red-500 text-white px-6 py-3 rounded-xl hover:bg-red-600 transition shadow-lg flex items-center gap-2 font-bold">
+              ⏹️ Dừng & Gỡ băng
             </button>
           )}
 
-          {transcripts.length > 0 && (
-            <button
-              onClick={() => setTranscripts([])}
-              className="bg-white text-gray-600 px-6 py-4 rounded-2xl hover:bg-gray-50 transition-all border border-gray-200 shadow-sm"
-            >
-              🗑️ Xóa lịch sử
+          {transcripts.length > 0 && !isRecording && (
+            <button onClick={runDeepAnalysis} disabled={analyzing}
+              className="bg-purple-600 text-white px-6 py-3 rounded-xl hover:bg-purple-700 transition shadow-lg flex items-center gap-2 font-bold disabled:opacity-50">
+              {analyzing ? '⏳ Agents đang làm việc...' : '🧠 Phân tích chuyên sâu (AI Agents)'}
             </button>
           )}
         </div>
 
-        {/* Processing indicator */}
-        {loading && (
-          <div className="mb-8 p-6 bg-white rounded-2xl shadow-lg border border-blue-100">
-            <div className="flex items-center gap-4">
-              <div className="animate-spin w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full"></div>
-              <div>
-                <p className="font-medium text-blue-700">MEA đang xử lý...</p>
-                <p className="text-sm text-gray-500">
-                  Whisper STT → LLM Role Detection → Medical Fixer
-                </p>
-              </div>
+        {/* Loading States */}
+        {loading && <div className="p-4 bg-blue-50 text-blue-700 rounded-xl mb-6 animate-pulse">📝 Đang chuyển đổi giọng nói thành văn bản...</div>}
+        {analyzing && (
+          <div className="p-6 bg-purple-50 border border-purple-200 rounded-xl mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-5 h-5 border-2 border-purple-600 border-t-transparent rounded-full animate-spin"></div>
+              <span className="font-semibold text-purple-800">Hệ thống Multi-Agent đang hoạt động:</span>
+            </div>
+            <div className="mt-2 text-sm text-purple-600 ml-8 space-y-1">
+              <p>• Scribe Agent đang tóm tắt bệnh án SOAP...</p>
+              <p>• Medical Expert đang tra cứu Knowledge Base (RAG)...</p>
+              <p>• ICD-10 Agent đang gán mã bệnh lý...</p>
             </div>
           </div>
         )}
 
-        {/* Transcript Display */}
-        <div className="bg-white rounded-2xl shadow-lg border border-gray-100 overflow-hidden">
-          <div className="p-4 bg-gradient-to-r from-gray-50 to-gray-100 border-b border-gray-200">
-            <h2 className="text-lg font-bold text-gray-700 flex items-center gap-2">
-              📝 Cuộc hội thoại
-              <span className="text-sm font-normal text-gray-500">
-                ({transcripts.length} đoạn)
-              </span>
-            </h2>
+        {/* MAIN LAYOUT: 2 Columns */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+
+          {/* LEFT: Transcript */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-fit">
+            <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-700 flex justify-between">
+              <span>📄 Chi tiết cuộc hội thoại</span>
+              <span className="text-gray-400 font-normal text-sm">{transcripts.length} segments</span>
+            </div>
+            <div className="p-4 max-h-[80vh] overflow-y-auto space-y-4">
+              {transcripts.length === 0 ? (
+                <div className="text-center py-20 text-gray-400">Chưa có dữ liệu hội thoại</div>
+              ) : (
+                transcripts.map((seg, idx) => {
+                  const style = getSpeakerStyle(seg.role);
+                  return (
+                    <div key={idx} className={`p-4 rounded-xl border-l-4 ${style.borderColor} ${style.bgColor}`}>
+                      <div className="text-xs font-bold mb-1 opacity-70 {style.textColor}">{style.label}</div>
+                      <div className="text-gray-800">{seg.clean_text}</div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
           </div>
 
-          <div className="p-4 max-h-[60vh] overflow-y-auto space-y-4">
-            {transcripts.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="text-6xl mb-4">🎤</div>
-                <p className="text-gray-400 text-lg">
-                  Bấm "Bắt đầu ghi âm" để bắt đầu ghi chép cuộc khám bệnh
-                </p>
-                <p className="text-gray-300 text-sm mt-2">
-                  Hệ thống sẽ tự động phân biệt giọng bác sĩ và bệnh nhân
-                </p>
+          {/* RIGHT: Analysis Results */}
+          <div className="space-y-6">
+            {!analysisResult ? (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-10 text-center">
+                <div className="text-5xl mb-4">🩺</div>
+                <h3 className="text-xl font-bold text-gray-700">Chưa có kết quả phân tích</h3>
+                <p className="text-gray-500 mt-2">Nhấn nút "Phân tích chuyên sâu" để kích hoạt AI Agents.</p>
               </div>
             ) : (
-              transcripts.map((segment, idx) => {
-                const style = getSpeakerStyle(segment.role);
-                return (
-                  <div
-                    key={idx}
-                    className={`p-5 rounded-xl border-l-4 ${style.borderColor} ${style.bgColor} transition-all hover:shadow-md`}
-                  >
-                    <div className="flex justify-between items-center mb-3">
-                      <span className={`font-bold ${style.textColor} px-3 py-1 rounded-full ${style.labelBg} text-sm`}>
-                        {style.label}
-                      </span>
-                      {segment.start > 0 && (
-                        <span className="text-xs text-gray-400 font-mono">
-                          {segment.start.toFixed(1)}s - {segment.end.toFixed(1)}s
-                        </span>
+              <div className="bg-white rounded-2xl shadow-lg border border-gray-200 overflow-hidden animate-fade-in">
+                {/* Tabs */}
+                <div className="flex border-b border-gray-200">
+                  <button onClick={() => setActiveTab('soap')}
+                    className={`flex-1 py-3 font-bold text-sm ${activeTab === 'soap' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    📝 Bệnh án SOAP
+                  </button>
+                  <button onClick={() => setActiveTab('advice')}
+                    className={`flex-1 py-3 font-bold text-sm ${activeTab === 'advice' ? 'text-purple-600 border-b-2 border-purple-600 bg-purple-50' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    💡 Gợi ý & RAG
+                  </button>
+                  <button onClick={() => setActiveTab('icd')}
+                    className={`flex-1 py-3 font-bold text-sm ${activeTab === 'icd' ? 'text-orange-600 border-b-2 border-orange-600 bg-orange-50' : 'text-gray-500 hover:bg-gray-50'}`}>
+                    🏷️ Mã ICD-10
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-6 min-h-[500px]">
+
+                  {activeTab === 'soap' && (
+                    <div className="space-y-4">
+                      <div className="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                        <span className="font-bold text-blue-700 block mb-1">Subjective (Bệnh sử):</span>
+                        <p className="text-gray-700">{analysisResult.soap.subjective}</p>
+                      </div>
+                      <div className="p-3 bg-green-50 rounded-lg border border-green-100">
+                        <span className="font-bold text-green-700 block mb-1">Objective (Thực thể):</span>
+                        <p className="text-gray-700">{analysisResult.soap.objective}</p>
+                      </div>
+                      <div className="p-3 bg-yellow-50 rounded-lg border border-yellow-100">
+                        <span className="font-bold text-yellow-700 block mb-1">Assessment (Chẩn đoán):</span>
+                        <p className="text-gray-700">{analysisResult.soap.assessment}</p>
+                      </div>
+                      <div className="p-3 bg-red-50 rounded-lg border border-red-100">
+                        <span className="font-bold text-red-700 block mb-1">Plan (Điều trị):</span>
+                        <p className="text-gray-700 whitespace-pre-line">{analysisResult.soap.plan}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {activeTab === 'advice' && (
+                    <div>
+                      <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-line">
+                        {analysisResult.medicalAdvice}
+                      </div>
+                      {analysisResult.references.length > 0 && (
+                        <div className="mt-6 pt-4 border-t border-gray-100">
+                          <p className="text-xs font-bold text-gray-500 uppercase mb-2">Nguồn dữ liệu (RAG References):</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {analysisResult.references.map((ref, i) => (
+                              <span key={i} className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded border border-gray-200">
+                                📚 {ref}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
                       )}
                     </div>
+                  )}
 
-                    {/* Clean text (main display) */}
-                    <p className="text-lg text-gray-800 leading-relaxed">
-                      {segment.clean_text}
-                    </p>
-
-                    {/* Raw text (if different from clean) */}
-                    {segment.raw_text !== segment.clean_text && (
-                      <div className="mt-3 pt-3 border-t border-gray-200">
-                        <p className="text-xs text-gray-400 italic">
-                          <span className="font-medium">Raw:</span> "{segment.raw_text}"
-                        </p>
+                  {activeTab === 'icd' && (
+                    <div>
+                      <h4 className="font-bold text-gray-700 mb-4">Mã chẩn đoán đề xuất:</h4>
+                      <div className="space-y-2">
+                        {analysisResult.icdCodes.map((code, i) => (
+                          <div key={i} className="flex items-center gap-3 p-3 bg-orange-50 rounded-lg border border-orange-100 hover:shadow-sm transition">
+                            <span className="text-2xl">🏷️</span>
+                            <span className="font-mono font-bold text-orange-800 text-lg">{code}</span>
+                          </div>
+                        ))}
                       </div>
-                    )}
-                  </div>
-                );
-              })
+                      <p className="text-xs text-gray-400 mt-8 italic text-center">
+                        * Mã ICD-10 được gợi ý tự động bởi AI, vui lòng kiểm tra lại.
+                      </p>
+                    </div>
+                  )}
+
+                </div>
+              </div>
             )}
           </div>
+
         </div>
 
-        {/* Footer */}
-        <footer className="mt-8 text-center text-sm text-gray-400">
-          <p>Powered by Groq Whisper + Llama 3</p>
+        <footer className="mt-12 text-center text-sm text-gray-400">
+          Powered by LangGraph + Groq Llama 3 + Google Gemini Embeddings
         </footer>
       </div>
     </div>
