@@ -1,13 +1,11 @@
-import Groq from "groq-sdk";
 import { AgentState } from "./state";
 import { medicalVectorStore } from "../rag/vectorStore";
 import { Document } from "@langchain/core/documents";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+import { groq, GROQ_MODEL_STANDARD, GROQ_MODEL_EXPERT } from "./models";
 
 // --- 1. SCRIBE AGENT ---
 export async function scribeNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("✍️ Scribe Agent working...");
+    console.log("✍️ Scribe Agent working (Groq GPT-OSS-120B)...");
 
     const prompt = `Bạn là thư ký y khoa chuyên nghiệp.
 Nhiệm vụ: Chuyển transcript hội thoại thành bệnh án chuẩn SOAP tiếng Việt.
@@ -24,51 +22,63 @@ Yêu cầu output JSON format:
 }
 Chỉ trả về JSON hợp lệ, không có text khác.`;
 
-    const completion = await groq.chat.completions.create({
-        messages: [{ role: "user", content: prompt }],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.1,
-        response_format: { type: "json_object" }
-    });
+    try {
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: GROQ_MODEL_STANDARD,
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+        });
 
-    const soap = JSON.parse(completion.choices[0]?.message?.content || "{}");
-    return { soap };
+        const soap = JSON.parse(completion.choices[0]?.message?.content || "{}");
+        return { soap };
+    } catch (e) {
+        console.error("Scribe Agent Error:", e);
+        return { soap: { subjective: "", objective: "", assessment: "", plan: "Error generating SOAP note" } };
+    }
 }
 
 // --- 2. ICD-10 AGENT ---
 export async function icdNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("🏷️ ICD-10 Agent working...");
+    console.log("🏷️ ICD-10 Agent working (Groq GPT-OSS-120B)...");
 
     const prompt = `Bạn là chuyên gia về mã hóa bệnh lý ICD-10.
 Chẩn đoán: "${state.soap.assessment}"
 Triệu chứng: "${state.soap.subjective}"
 
 Nhiệm vụ: Tìm mã ICD-10 phù hợp nhất (ưu tiên mã chi tiết).
-Trả về JSON list các mã: ["K29.7 - Viêm dạ dày", "R10.1 - Đau vùng thượng vị"]`;
+Trả về kết quả dưới dạng JSON Object với key "codes" là danh sách các mã.
+Ví dụ:
+{
+    "codes": ["K29.7 - Viêm dạ dày", "R10.1 - Đau vùng thượng vị"]
+}`;
 
-    const completion = await groq.chat.completions.create({
-        messages: [{ role: "user", content: prompt }],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.1,
-        response_format: { type: "json_object" } // Groq usually handles this better as text if list, but let's try strict json
-    });
-
-    // Handle potential non-JSON output or wrapper keys
     try {
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: GROQ_MODEL_STANDARD,
+            temperature: 0.1,
+            response_format: { type: "json_object" }
+        });
+
         const content = completion.choices[0]?.message?.content || "{}";
-        // Attempt to parse list directly or finding a key
+        console.log("ICD-10 Raw Output:", content);
+
         const parsed = JSON.parse(content);
-        // If it returns { "codes": [...] } or just [...]
-        const codes = Array.isArray(parsed) ? parsed : (parsed.codes || parsed.icd10 || []);
-        return { icdCodes: codes };
+        // Normalize output
+        const codes = Array.isArray(parsed) ? parsed : (parsed.codes || parsed.icd_codes || []);
+        const finalCodes = Array.isArray(codes) ? codes.map(c => String(c)) : [];
+
+        return { icdCodes: finalCodes };
     } catch (e) {
-        return { icdCodes: ["Error parsing ICD codes"] };
+        console.error("ICD-10 Agent Error:", e);
+        return { icdCodes: ["Error retrieving ICD codes"] };
     }
 }
 
 // --- 3. MEDICAL EXPERT AGENT (RAG) ---
 export async function expertNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("👨‍⚕️ Medical Expert Agent working...");
+    console.log("👨‍⚕️ Medical Expert Agent working (Groq GPT-OSS-20B)...");
 
     // 1. Initialize DB (if not ready)
     await medicalVectorStore.initialize();
@@ -100,7 +110,7 @@ YÊU CẦU:
 
     const completion = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],
-        model: "llama-3.3-70b-versatile",
+        model: GROQ_MODEL_EXPERT,
         temperature: 0.2
     });
 

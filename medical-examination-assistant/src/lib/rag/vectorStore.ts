@@ -1,7 +1,7 @@
 import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
-import { MemoryVectorStore } from "langchain/vectorstores/memory";
+import { MemoryVectorStore } from '@langchain/classic/vectorstores/memory';
 import { Document } from "@langchain/core/documents";
-import { RecursiveCharacterTextSplitter } from "langchain/text_splitter";
+import { RecursiveCharacterTextSplitter } from "@langchain/classic/text_splitter";
 import fs from "fs/promises";
 import path from "path";
 
@@ -73,7 +73,7 @@ export class MedicalVectorStore {
         }
 
         if (docs.length === 0) {
-            console.warn("⚠️ No documents found in knowledge base.");
+            console.warn(" No documents found in knowledge base.");
             return;
         }
 

@@ -29,12 +29,10 @@ const graphState = {
 // Create the Graph
 const workflow = new StateGraph<AgentState>({
     channels: graphState
-});
-
-// Add Nodes
-workflow.addNode("scribe", scribeNode);
-workflow.addNode("icd", icdNode);
-workflow.addNode("expert", expertNode);
+})
+    .addNode("scribe", scribeNode)
+    .addNode("icd", icdNode)
+    .addNode("expert", expertNode);
 
 // Define Flow
 // START -> scribe

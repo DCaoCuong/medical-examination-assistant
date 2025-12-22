@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+const groqLocal = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 interface TranscriptSegment {
     start: number;
@@ -74,6 +74,8 @@ function prepareSegmentsForRoleDetection(
     return [];
 }
 
+import { groq, GROQ_MODEL_STANDARD } from '@/lib/agents/models';
+
 /**
  * Sử dụng LLM để phân tích nội dung và xác định vai trò người nói
  * Dựa vào ngữ cảnh của câu nói để đoán ai là Bác sĩ, ai là Bệnh nhân
@@ -109,21 +111,19 @@ Trả về CHÍNH XÁC định dạng JSON array sau, KHÔNG có text khác:
 [{"index": 0, "role": "Bác sĩ"}, {"index": 1, "role": "Bệnh nhân"}, ...]`;
 
     try {
-        console.log('🧠 Analyzing speaker roles with LLM...');
+        console.log(' Analyzing speaker roles with Groq...');
 
-        const chatCompletion = await groq.chat.completions.create({
-            messages: [
-                { role: "user", content: prompt }
-            ],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.1,
-            max_tokens: 500
+        // Groq API call
+        const completion = await groq.chat.completions.create({
+            messages: [{ role: "user", content: prompt }],
+            model: GROQ_MODEL_STANDARD,
+            temperature: 0.1
         });
 
-        const responseText = chatCompletion.choices[0]?.message?.content || '';
-        console.log('🧠 LLM response:', responseText.substring(0, 200));
+        const responseText = completion.choices[0]?.message?.content || '';
+        console.log('LLM response:', responseText.substring(0, 200));
 
-        // Parse JSON response
+        // Start checking for JSON
         const jsonMatch = responseText.match(/\[[\s\S]*\]/);
         if (!jsonMatch) {
             console.warn('LLM did not return valid JSON, keeping original roles');
@@ -142,7 +142,7 @@ Trả về CHÍNH XÁC định dạng JSON array sau, KHÔNG có text khác:
             return seg;
         });
 
-        console.log('✅ LLM role detection completed');
+        console.log('LLM role detection completed');
         return updatedSegments;
 
     } catch (error) {
@@ -153,19 +153,19 @@ Trả về CHÍNH XÁC định dạng JSON array sau, KHÔNG có text khác:
 }
 
 /**
- * Sử dụng Llama 3 để sửa lỗi thuật ngữ y khoa
+ * Sử dụng Groq (OpenAI GPT-OSS-120B) để sửa lỗi thuật ngữ y khoa nhanh chóng
  * CHỈ sửa lỗi chính tả, KHÔNG thêm nội dung mới
  */
 async function fixMedicalText(text: string): Promise<string> {
     if (!text || text.trim().length === 0) return text;
 
     try {
-        const chatCompletion = await groq.chat.completions.create({
+        // Groq API call with OpenAI model
+        const completion = await groq.chat.completions.create({
             messages: [
                 {
                     role: "system",
                     content: `Bạn là chuyên gia hiệu chỉnh văn bản y khoa tiếng Việt.
-
 NHIỆM VỤ: Chỉ sửa lỗi chính tả và phát âm sai trong đoạn văn được chuyển từ giọng nói.
 
 QUY TẮC BẮT BUỘC:
@@ -176,27 +176,20 @@ QUY TẮC BẮT BUỘC:
    - "đau thượng vịt" → "đau thượng vị"
    - "bị sụp" → "bị sốt"  
    - "ăn chích" → "ăn kiêng"
-   - "tiêu chuẩn" → "triệu chứng" (trong ngữ cảnh y khoa)
+   - "tiêu chuẩn" → "triệu chứng"
 5. Giữ nguyên số từ và ý nghĩa gốc
-6. Trả về CHÍNH XÁC đoạn văn gốc với lỗi đã sửa
-
-VÍ DỤ:
-Input: "Tôi bị đau thượng vịt và sụp từ hôm qua"
-Output: "Tôi bị đau thượng vị và sốt từ hôm qua"
-
-Input: "Xin chào bạn có những tiêu chuẩn gì"
-Output: "Xin chào, bạn có những triệu chứng gì?"
-
-KHÔNG BAO GIỜ trả về đoạn văn dài hơn đáng kể so với input.`
+6. Trả về CHÍNH XÁC đoạn văn gốc với lỗi đã sửa, KHÔNG trả lời hay giải thích thêm.`
                 },
                 { role: "user", content: text }
             ],
-            model: "llama-3.3-70b-versatile",
-            temperature: 0.05,
-            max_tokens: Math.ceil(text.length * 1.5)
+            model: GROQ_MODEL_STANDARD,
+            temperature: 0.05
         });
 
-        return chatCompletion.choices[0]?.message?.content || text;
+        // Add artificial delay to respect rate limits if calling in loop
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        return completion.choices[0]?.message?.content || text;
     } catch (error) {
         console.error('Medical fixer error:', error);
         return text;
@@ -216,13 +209,13 @@ export async function POST(req: NextRequest) {
     }
 
     try {
-        console.log(`📁 Received audio: ${file.size} bytes`);
+        console.log(` Received audio: ${file.size} bytes`);
 
         // Step 1: Whisper STT - Chuyển audio thành text
-        console.log('🎤 Running Whisper STT...');
+        console.log(' Running Whisper STT...');
         const transcription = await transcribeWithGroq(file);
-        console.log(`📝 Transcription: ${transcription.text.substring(0, 100)}...`);
-        console.log(`📊 Segments count: ${transcription.segments.length}`);
+        console.log(` Transcription: ${transcription.text.substring(0, 100)}...`);
+        console.log(` Segments count: ${transcription.segments.length}`);
 
         // Nếu không có text, trả về empty
         if (!transcription.text || transcription.text.trim().length === 0) {
@@ -236,21 +229,23 @@ export async function POST(req: NextRequest) {
 
         // Step 2: Prepare segments for role detection
         const preparedSegments = prepareSegmentsForRoleDetection(transcription);
-        console.log(`🔗 Prepared segments: ${preparedSegments.length}`);
+        console.log(` Prepared segments: ${preparedSegments.length}`);
 
         // Step 3: LLM Role Detection - Phân tích nội dung để xác định Bác sĩ/Bệnh nhân
         const segmentsWithRoles = await detectSpeakerRoleByContent(preparedSegments);
 
         // Step 4: Medical Text Fixer - Sửa lỗi thuật ngữ y khoa
-        console.log('💊 Running Medical Text Fixer...');
-        const processedSegments: ProcessedSegment[] = await Promise.all(
-            segmentsWithRoles.map(async (seg) => ({
+        console.log(' Running Medical Text Fixer...');
+        const processedSegments: ProcessedSegment[] = [];
+        for (const seg of segmentsWithRoles) {
+            const clean_text = await fixMedicalText(seg.raw_text);
+            processedSegments.push({
                 ...seg,
-                clean_text: await fixMedicalText(seg.raw_text)
-            }))
-        );
+                clean_text
+            });
+        }
 
-        console.log('✅ Processing complete!');
+        console.log('Processing complete!');
 
         return NextResponse.json({
             success: true,
@@ -260,7 +255,7 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error) {
-        console.error('❌ Processing error:', error);
+        console.error(' Processing error:', error);
         return NextResponse.json(
             { error: "Lỗi xử lý hệ thống", details: String(error) },
             { status: 500 }
@@ -279,6 +274,6 @@ export async function GET() {
             llm_role_detection: 'ready',
             medical_fixer: 'ready'
         },
-        note: 'Diarization removed - using LLM Context Analysis for speaker role detection'
+        note: 'Using LLM Context Analysis for speaker role detection'
     });
 }

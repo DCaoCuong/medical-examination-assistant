@@ -9,14 +9,14 @@ export async function POST(req: NextRequest) {
             return NextResponse.json({ error: "Transcript is required" }, { status: 400 });
         }
 
-        console.log("🚀 Starting Medical Agent Workflow...");
+        console.log(" Starting Medical Agent Workflow...");
 
         // Invoke the LangGraph workflow
         const result = await medicalAgentGraph.invoke({
             transcript: transcript
         });
 
-        console.log("✅ Workflow completed!");
+        console.log(" Workflow completed!");
 
         return NextResponse.json({
             success: true,
@@ -29,7 +29,7 @@ export async function POST(req: NextRequest) {
         });
 
     } catch (error) {
-        console.error("❌ Agent workflow error:", error);
+        console.error(" Agent workflow error:", error);
         return NextResponse.json(
             { error: "Internal Server Error", details: String(error) },
             { status: 500 }
