@@ -1,4 +1,4 @@
-import { medicalVectorStore } from "@/lib/rag/vectorStore";
+import { getMedicalVectorStore } from "@/lib/rag/vectorStore";
 import { groq, GROQ_MODEL_STANDARD } from "./models";
 
 export interface SoapNote {
@@ -44,7 +44,7 @@ async function calculateTextSimilarity(text1: string, text2: string): Promise<nu
     if (text1 === text2) return 100;
 
     try {
-        const embeddings = medicalVectorStore.embeddings;
+        const embeddings = getMedicalVectorStore().embeddings;
         const [embedding1, embedding2] = await embeddings.embedDocuments([text1, text2]);
         const similarity = cosineSimilarity(embedding1, embedding2);
         return Math.max(0, Math.min(100, similarity * 100)); // 0-100%

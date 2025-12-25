@@ -104,5 +104,12 @@ export class MedicalVectorStore {
     }
 }
 
-// Singleton instance
-export const medicalVectorStore = new MedicalVectorStore();
+// Singleton instance with lazy initialization
+let medicalVectorStoreInstance: MedicalVectorStore | null = null;
+
+export function getMedicalVectorStore(): MedicalVectorStore {
+    if (!medicalVectorStoreInstance) {
+        medicalVectorStoreInstance = new MedicalVectorStore();
+    }
+    return medicalVectorStoreInstance;
+}

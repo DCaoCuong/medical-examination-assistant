@@ -1,11 +1,11 @@
 import { AgentState } from "./state";
-import { medicalVectorStore } from "../rag/vectorStore";
+import { getMedicalVectorStore } from "../rag/vectorStore";
 import { Document } from "@langchain/core/documents";
 import { groq, GROQ_MODEL_STANDARD, GROQ_MODEL_EXPERT } from "./models";
 
 // --- 1. SCRIBE AGENT ---
 export async function scribeNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("✍️ Scribe Agent working (Groq GPT-OSS-120B)...");
+    console.log("Scribe Agent working (Groq GPT-OSS-120B)...");
 
     const prompt = `Bạn là thư ký y khoa chuyên nghiệp.
 Nhiệm vụ: Chuyển transcript hội thoại thành bệnh án chuẩn SOAP tiếng Việt.
@@ -40,7 +40,7 @@ Chỉ trả về JSON hợp lệ, không có text khác.`;
 
 // --- 2. ICD-10 AGENT ---
 export async function icdNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("🏷️ ICD-10 Agent working (Groq GPT-OSS-120B)...");
+    console.log("ICD-10 Agent working (Groq GPT-OSS-120B)...");
 
     const prompt = `Bạn là chuyên gia về mã hóa bệnh lý ICD-10.
 Chẩn đoán: "${state.soap.assessment}"
@@ -78,9 +78,10 @@ Ví dụ:
 
 // --- 3. MEDICAL EXPERT AGENT (RAG) ---
 export async function expertNode(state: AgentState): Promise<Partial<AgentState>> {
-    console.log("👨‍⚕️ Medical Expert Agent working (Groq GPT-OSS-20B)...");
+    console.log("Medical Expert Agent working (Groq GPT-OSS-20B)...");
 
     // 1. Initialize DB (if not ready)
+    const medicalVectorStore = getMedicalVectorStore();
     await medicalVectorStore.initialize();
 
     // 2. Retrieve relevant docs based on Subjective
