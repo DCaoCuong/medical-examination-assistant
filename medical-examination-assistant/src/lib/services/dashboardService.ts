@@ -33,6 +33,18 @@ export interface RecentSession {
     diagnosis?: string;
 }
 
+export interface PatientSummary {
+    id: string;
+    displayId: string;
+    name: string;
+    age: number | null;
+    gender: string | null;
+    totalVisits: number;
+    lastVisitDate: Date;
+    lastVisitStatus: string;
+    lastVisitId: string;
+}
+
 /**
  * Get dashboard statistics
  */
@@ -109,9 +121,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
 }
 
 /**
- * Get recent sessions with patient info
+ * Get sessions with patient info (with pagination)
  */
-export async function getRecentSessions(limit: number = 10): Promise<RecentSession[]> {
+export async function getRecentSessions(limit: number = 50, page: number = 1): Promise<RecentSession[]> {
+    const offset = (page - 1) * limit;
+
     const sessions = await db
         .select({
             sessionId: examinationSessions.id,
@@ -126,7 +140,8 @@ export async function getRecentSessions(limit: number = 10): Promise<RecentSessi
         .from(examinationSessions)
         .leftJoin(patients, eq(examinationSessions.patientId, patients.id))
         .orderBy(desc(examinationSessions.createdAt))
-        .limit(limit);
+        .limit(limit)
+        .offset(offset);
 
     // For each session, get diagnosis from medical record
     const sessionsWithDiagnosis = await Promise.all(
@@ -152,4 +167,68 @@ export async function getRecentSessions(limit: number = 10): Promise<RecentSessi
     );
 
     return sessionsWithDiagnosis;
+}
+
+/**
+ * Get list of patients with summary info
+ */
+export async function getPatientsList(limit: number = 50, page: number = 1): Promise<PatientSummary[]> {
+    const offset = (page - 1) * limit;
+
+    // Get all patients with pagination
+    const patientsList = await db
+        .select()
+        .from(patients)
+        .orderBy(desc(patients.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+    // For each patient, get summary info
+    const patientsWithSummary = await Promise.all(
+        patientsList.map(async (patient) => {
+            // Count total visits
+            const visitsCount = await db
+                .select({ count: sql<number>`count(*)` })
+                .from(examinationSessions)
+                .where(eq(examinationSessions.patientId, patient.id));
+
+            // Get latest visit
+            const latestVisit = await db
+                .select({
+                    id: examinationSessions.id,
+                    status: examinationSessions.status,
+                    createdAt: examinationSessions.createdAt
+                })
+                .from(examinationSessions)
+                .where(eq(examinationSessions.patientId, patient.id))
+                .orderBy(desc(examinationSessions.createdAt))
+                .limit(1);
+
+            // Calculate age from birthDate
+            let age: number | null = null;
+            if (patient.birthDate) {
+                const birthDate = new Date(patient.birthDate);
+                const today = new Date();
+                age = today.getFullYear() - birthDate.getFullYear();
+                const monthDiff = today.getMonth() - birthDate.getMonth();
+                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+            }
+
+            return {
+                id: patient.id,
+                displayId: patient.displayId,
+                name: patient.name,
+                age: age,
+                gender: patient.gender,
+                totalVisits: visitsCount[0]?.count || 0,
+                lastVisitDate: latestVisit[0]?.createdAt || patient.createdAt,
+                lastVisitStatus: latestVisit[0]?.status || 'never_visited',
+                lastVisitId: latestVisit[0]?.id || ''
+            };
+        })
+    );
+
+    return patientsWithSummary;
 }

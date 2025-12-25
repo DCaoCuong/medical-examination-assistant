@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Tabs, Textarea, type TabItem } from './ui';
+import { Sparkles, Save } from 'lucide-react';
 
 interface AIResults {
     soap: {
@@ -67,6 +68,34 @@ export default function MedicalRecordReview({
             return newCodes;
         });
     };
+
+    // Magic Fill: Accept all AI suggestions
+    const handleMagicFill = () => {
+        setFormData({
+            subjective: aiResults.soap.subjective || '',
+            objective: aiResults.soap.objective || '',
+            assessment: aiResults.soap.assessment || '',
+            plan: aiResults.soap.plan || '',
+            icdCodes: aiResults.icdCodes?.map(item => item.code) || [],
+        });
+        setSelectedIcdCodes(aiResults.icdCodes?.map(item => item.code) || []);
+        setSaveMessage({ type: 'success', text: '✨ Đã áp dụng toàn bộ gợi ý AI!' });
+    };
+
+    // Keyboard shortcut: Ctrl+Enter to save
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                if (!isSaving && formData.assessment && formData.icdCodes.length > 0) {
+                    handleFinalSave();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isSaving, formData]);
 
     // Save draft
     const handleSaveDraft = async () => {
@@ -293,12 +322,24 @@ export default function MedicalRecordReview({
     return (
         <Card className="mt-6">
             <div className="p-6 border-b border-slate-200">
-                <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                    Xét duyệt & Chỉnh sửa bệnh án
-                </h2>
-                <p className="text-slate-600">
-                    Xem lại kết quả AI và chỉnh sửa nếu cần trước khi lưu bệnh án chính thức
-                </p>
+                <div className="flex items-start justify-between">
+                    <div>
+                        <h2 className="text-2xl font-bold text-slate-900 mb-2">
+                            Xét duyệt & Chỉnh sửa bệnh án
+                        </h2>
+                        <p className="text-slate-600">
+                            Xem lại kết quả AI và chỉnh sửa nếu cần trước khi lưu bệnh án chính thức
+                        </p>
+                    </div>
+                    <Button
+                        variant="secondary"
+                        onClick={handleMagicFill}
+                        className="flex items-center gap-2 px-4 py-2"
+                    >
+                        <Sparkles className="w-4 h-4" />
+                        Phê duyệt nhanh AI
+                    </Button>
+                </div>
             </div>
 
             {/* Tabs for SOAP sections */}
@@ -307,8 +348,8 @@ export default function MedicalRecordReview({
             {/* Save Message */}
             {saveMessage && (
                 <div className={`mx-6 mb-4 p-4 rounded-lg ${saveMessage.type === 'success'
-                        ? 'bg-green-50 border border-green-200'
-                        : 'bg-red-50 border border-red-200'
+                    ? 'bg-green-50 border border-green-200'
+                    : 'bg-red-50 border border-red-200'
                     }`}>
                     <p className={`text-sm flex items-center gap-2 ${saveMessage.type === 'success' ? 'text-green-700' : 'text-red-700'
                         }`}>
@@ -341,7 +382,7 @@ export default function MedicalRecordReview({
                     variant="primary"
                     onClick={handleFinalSave}
                     disabled={isSaving || !formData.assessment || formData.icdCodes.length === 0}
-                    className="px-8 py-3 text-lg font-semibold"
+                    className="px-8 py-3 text-lg font-semibold relative"
                 >
                     {isSaving ? (
                         <span className="flex items-center gap-2">
@@ -352,7 +393,13 @@ export default function MedicalRecordReview({
                             Đang lưu...
                         </span>
                     ) : (
-                        '💾 Lưu bệnh án (Final)'
+                        <>
+                            <Save className="w-5 h-5 inline mr-2" />
+                            Lưu bệnh án (Final)
+                            <span className="ml-3 text-xs bg-white/20 px-2 py-1 rounded font-mono">
+                                Ctrl+Enter
+                            </span>
+                        </>
                     )}
                 </Button>
             </div>

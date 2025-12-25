@@ -15,18 +15,11 @@ interface Patient {
 }
 
 interface PatientSearchModalProps {
-    isOpen: boolean;
     onClose: () => void;
-    onSelectPatient?: (patientId: string) => void;
-    onCreateFollowUp?: (patientId: string) => void;
+    onPatientSelect: (patientId: string, displayId: string) => void;
 }
 
-export default function PatientSearchModal({
-    isOpen,
-    onClose,
-    onSelectPatient,
-    onCreateFollowUp
-}: PatientSearchModalProps) {
+export default function PatientSearchModal({ onClose, onPatientSelect }: PatientSearchModalProps) {
     const [searchQuery, setSearchQuery] = useState('');
     const [patients, setPatients] = useState<Patient[]>([]);
     const [loading, setLoading] = useState(false);
@@ -66,21 +59,16 @@ export default function PatientSearchModal({
         }
     };
 
-    const handleSelectPatient = (patientId: string) => {
-        if (onSelectPatient) {
-            onSelectPatient(patientId);
-        }
+    const handleSelectPatient = (patient: Patient) => {
+        onPatientSelect(patient.id, patient.displayId);
         onClose();
     };
 
     const handleFollowUp = (patientId: string) => {
-        if (onCreateFollowUp) {
-            onCreateFollowUp(patientId);
-        }
+        // Tái khám = navigate đến examination
+        onPatientSelect(patientId, patients.find(p => p.id === patientId)?.displayId || '');
         onClose();
     };
-
-    if (!isOpen) return null;
 
     return (
         <>
@@ -147,7 +135,7 @@ export default function PatientSearchModal({
                                     <PatientCard
                                         key={patient.id}
                                         patient={patient}
-                                        onSelect={() => handleSelectPatient(patient.id)}
+                                        onSelect={() => handleSelectPatient(patient)}
                                         onFollowUp={() => handleFollowUp(patient.id)}
                                         index={idx}
                                     />

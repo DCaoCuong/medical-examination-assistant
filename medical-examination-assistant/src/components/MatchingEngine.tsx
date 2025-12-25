@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { SoapNote, ComparisonResult } from '@/lib/agents/comparison';
-import { ArrowRight, Check, AlertTriangle, FileText, Activity, Calculator } from 'lucide-react';
+import { ArrowRight, Check, AlertTriangle, FileText, Activity, Calculator, Clipboard, PillBottle, Target } from 'lucide-react';
 import clsx from 'clsx';
 
 interface MatchingEngineProps {
@@ -91,7 +91,6 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                         <Activity className="w-5 h-5" />
                         <span>👨‍⚕️ Matching Engine: Bác sĩ thẩm định</span>
                     </div>
-                    <span className="text-xs bg-indigo-100 text-indigo-600 px-2 py-1 rounded">Bước 2/3</span>
                 </div>
 
                 <div className="p-6">
@@ -100,52 +99,74 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                         Hệ thống sẽ so sánh để học hỏi và đánh giá độ chính xác.
                     </p>
 
-                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Subjective */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                                    Subjective (Bệnh sử)
-                                </label>
-                                <textarea {...register('subjective')} rows={4}
-                                    className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm" />
-                            </div>
+                    <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+                        {/* Subjective */}
+                        <div className="space-y-2 border-l-4 border-l-blue-500 pl-4">
+                            <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                <Activity className="w-4 h-4 text-blue-600" />
+                                Subjective (Bệnh sử)
+                            </label>
+                            <textarea
+                                {...register('subjective')}
+                                rows={8}
+                                placeholder="Triệu chứng chủ quan mà bệnh nhân tự kể..."
+                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm bg-blue-50/30 transition"
+                            />
+                        </div>
 
-                            {/* Objective */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                                    Objective (Khám lâm sàng)
-                                </label>
-                                <textarea {...register('objective')} rows={4}
-                                    className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm" />
-                            </div>
+                        {/* Objective */}
+                        <div className="space-y-2 border-l-4 border-l-green-500 pl-4">
+                            <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                <Clipboard className="w-4 h-4 text-green-600" />
+                                Objective (Khám lâm sàng)
+                            </label>
+                            <textarea
+                                {...register('objective')}
+                                rows={8}
+                                placeholder="Kết quả khám lâm sàng, các dấu hiệu khách quan..."
+                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-green-500 focus:border-green-500 text-sm bg-green-50/30 transition"
+                            />
+                        </div>
 
-                            {/* Assessment */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                                    Assessment (Chẩn đoán)
-                                </label>
-                                <textarea {...register('assessment')} rows={3}
-                                    className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm" />
-                            </div>
+                        {/* Assessment */}
+                        <div className="space-y-2 border-l-4 border-l-amber-500 pl-4">
+                            <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-amber-600" />
+                                Assessment (Chẩn đoán)
+                            </label>
+                            <textarea
+                                {...register('assessment')}
+                                rows={6}
+                                placeholder="Chẩn đoán bệnh, đánh giá tình trạng..."
+                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-sm bg-amber-50/30 transition font-medium"
+                            />
+                        </div>
 
-                            {/* ICD Codes */}
-                            <div className="space-y-2">
-                                <label className="text-sm font-bold text-gray-700 flex items-center gap-1">
-                                    Mã ICD-10 (phân cách bằng dấu phẩy)
-                                </label>
-                                <input {...register('icdCodes')}
-                                    className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm font-mono" />
-                            </div>
+                        {/* ICD Codes */}
+                        <div className="space-y-2 border-l-4 border-l-teal-500 pl-4">
+                            <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                <Target className="w-4 h-4 text-teal-600" />
+                                Mã ICD-10 (phân cách bằng dấu phẩy)
+                            </label>
+                            <input
+                                {...register('icdCodes')}
+                                placeholder="Ví dụ: K29.5, B98.2, J06.9"
+                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm font-mono bg-teal-50/30 transition"
+                            />
                         </div>
 
                         {/* Plan */}
-                        <div className="space-y-2">
-                            <label className="text-sm font-bold text-gray-700 flex items-center gap-1">
+                        <div className="space-y-2 border-l-4 border-l-purple-500 pl-4">
+                            <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
+                                <PillBottle className="w-4 h-4 text-purple-600" />
                                 Plan (Điều trị)
                             </label>
-                            <textarea {...register('plan')} rows={4}
-                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm" />
+                            <textarea
+                                {...register('plan')}
+                                rows={8}
+                                placeholder="Kế hoạch điều trị, đơn thuốc, xét nghiệm..."
+                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 text-sm bg-purple-50/30 transition"
+                            />
                         </div>
 
                         <div className="pt-4 flex justify-end">

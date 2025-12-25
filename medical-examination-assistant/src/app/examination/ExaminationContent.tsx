@@ -66,6 +66,28 @@ export default function ExaminationPage() {
         }
     }, [patientId]);
 
+    // Keyboard shortcut: Space to toggle recording
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Only trigger if not focused on input/textarea
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+                return;
+            }
+
+            if (e.code === 'Space' && transcripts.length === 0 && !loading) {
+                e.preventDefault();
+                if (isRecording) {
+                    stopRecording();
+                } else {
+                    startRecording();
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isRecording, transcripts.length, loading]);
+
     const createSessionForPatient = async (patientId: string) => {
         setIsCreatingSession(true);
         try {
@@ -252,22 +274,36 @@ export default function ExaminationPage() {
                 >
                     <div className="text-center py-8">
                         {!isRecording && transcripts.length === 0 && (
-                            <Button
-                                variant="primary"
-                                onClick={startRecording}
-                                className="px-8 py-4 text-lg"
-                            >
-                                🎙️ Bắt đầu ghi âm
-                            </Button>
+                            <div className="space-y-4">
+                                <Button
+                                    variant="primary"
+                                    onClick={startRecording}
+                                    className="px-8 py-4 text-lg"
+                                >
+                                    🎙️ Bắt đầu ghi âm
+                                </Button>
+                                <div className="text-sm text-slate-500">
+                                    <kbd className="px-3 py-1.5 bg-slate-100 border border-slate-300 rounded font-mono text-slate-700 shadow-sm">
+                                        Space
+                                    </kbd>
+                                    <span className="ml-2">để bắt đầu/dừng ghi âm</span>
+                                </div>
+                            </div>
                         )}
                         {isRecording && (
-                            <Button
-                                variant="danger"
-                                onClick={stopRecording}
-                                className="px-8 py-4 text-lg animate-pulse"
-                            >
-                                ⏹️ Dừng ghi âm
-                            </Button>
+                            <div className="space-y-4">
+                                <Button
+                                    variant="danger"
+                                    onClick={stopRecording}
+                                    className="px-8 py-4 text-lg animate-pulse"
+                                >
+                                    ⏹️ Dừng ghi âm
+                                </Button>
+                                <div className="text-sm text-red-600 font-medium">
+                                    <span className="inline-block w-3 h-3 bg-red-500 rounded-full animate-pulse mr-2"></span>
+                                    Đang ghi âm... Nhấn Space hoặc nút để dừng
+                                </div>
+                            </div>
                         )}
                         {loading && (
                             <div className="flex items-center justify-center gap-2 text-slate-600">

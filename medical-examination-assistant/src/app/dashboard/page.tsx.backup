@@ -1,0 +1,393 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Card from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import Button from '@/components/ui/Button';
+import PatientSearchModal from '@/components/PatientSearchModal';
+import PatientFormModal from '@/components/PatientFormModal';
+import { Search, UserPlus, TrendingUp, Users, Calendar, Activity, Stethoscope, Trash2 } from 'lucide-react';
+
+interface DashboardStats {
+    today: {
+        totalSessions: number;
+        completedSessions: number;
+        activeSessions: number;
+    };
+    thisWeek: {
+        totalSessions: number;
+        newPatients: number;
+    };
+    thisMonth: {
+        totalSessions: number;
+        newPatients: number;
+    };
+    total: {
+        patients: number;
+        sessions: number;
+    };
+}
+
+interface PatientSummary {
+    id: string;
+    displayId: string;
+    name: string;
+    age: number | null;
+    gender: string;
+    totalVisits: number;
+    lastVisitDate: string;
+    lastVisitStatus: string;
+    lastVisitId: string;
+}
+
+export default function DashboardPage() {
+    const router = useRouter();
+    const [stats, setStats] = useState<DashboardStats | null>(null);
+    const [patients, setPatients] = useState<PatientSummary[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [showPatientSearch, setShowPatientSearch] = useState(false);
+    const [showPatientForm, setShowPatientForm] = useState(false);
+    const [deletingPatientId, setDeletingPatientId] = useState<string | null>(null);
+
+    useEffect(() => {
+        fetchDashboardData();
+
+        // Keyboard shortcut: Ctrl+K to open search
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                setShowPatientSearch(true);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const fetchDashboardData = async () => {
+        try {
+            const res = await fetch('/api/dashboard/stats?limit=50');
+            const data = await res.json();
+
+            if (data.success) {
+                setStats(data.stats);
+                setPatients(data.patients);
+            }
+        } catch (error) {
+            console.error('Error fetching dashboard data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleNewPatient = () => {
+        setShowPatientForm(true);
+    };
+
+    const handleSearch = () => {
+        setShowPatientSearch(true);
+    };
+
+    const handlePatientCreated = (patientId: string) => {
+        setShowPatientForm(false);
+        // Refresh dashboard data
+        fetchDashboardData();
+        // Navigate to examination page
+        router.push(`/examination?patientId=${patientId}`);
+    };
+
+    const handlePatientSelected = (patientId: string, displayId: string) => {
+        setShowPatientSearch(false);
+        // Navigate to patient history
+        router.push(`/patient/${displayId}/history`);
+    };
+
+    const handleQuickExam = (patientId: string, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent row click
+        router.push(`/examination?patientId=${patientId}`);
+    };
+
+    const handleDeletePatient = async (patientId: string, displayId: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+
+        if (!confirm(`Xóa toàn bộ hồ sơ bệnh nhân ${displayId}? Điều này sẽ xóa vĩnh viễn tất cả phiên khám và bệnh án.`)) {
+            return;
+        }
+
+        setDeletingPatientId(patientId);
+
+        try {
+            const res = await fetch(`/api/patient/${patientId}`, {
+                method: 'DELETE'
+            });
+
+            const data = await res.json();
+
+            if (data.success) {
+                fetchDashboardData();
+                alert('Xóa hồ sơ bệnh nhân thành công!');
+            } else {
+                alert('Lỗi: ' + data.message);
+            }
+        } catch (error) {
+            console.error('Error deleting patient:', error);
+            alert('Lỗi kết nối. Vui lòng thử lại.');
+        } finally {
+            setDeletingPatientId(null);
+        }
+    };
+
+    const handleRowClick = (displayId: string) => {
+        router.push(`/patient/${displayId}/history`);
+    };
+
+    if (loading) {
+        return (
+            <div className=\"min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/30 to-teal-50/30 flex items-center justify-center\">
+                < div className =\"text-center\">
+                    < div className =\"animate-spin rounded-full h-12 w-12 border-b-2 border-sky-600 mx-auto mb-4\"></div>
+                        < p className =\"text-slate-600\">Đang tải dữ liệu...</p>
+                </div >
+            </div >
+        );
+    }
+
+    return (
+        <div className=\"min-h-screen bg-gradient-to-br from-slate-50 via-sky-50/30 to-teal-50/30 p-6\">
+            < div className =\"max-w-7xl mx-auto space-y-6\">
+    {/* Header */ }
+    <div className=\"flex items-center justify-between\">
+        < div >
+        <h1 className=\"text-3xl font-bold text-slate-900\">Dashboard</h1>
+            < p className =\"text-slate-600 mt-1\">Tổng quan hệ thống quản lý khám bệnh</p>
+                    </div >
+        <div className=\"flex gap-3\">
+            < Button
+    variant =\"secondary\"
+    onClick = { handleSearch }
+    className =\"flex items-center gap-2\"
+        >
+        <Search className=\"w-5 h-5\" />
+                            Tìm kiếm bệnh nhân
+        < span className =\"ml-2 text-xs bg-white/50 px-2 py-1 rounded font-mono\">
+    Ctrl + K
+                            </span >
+                        </Button >
+        <Button
+            variant=\"primary\"
+    onClick = { handleNewPatient }
+    className =\"flex items-center gap-2\"
+        >
+        <UserPlus className=\"w-5 h-5\" />
+                            Bệnh nhân mới
+                        </Button >
+                    </div >
+                </div >
+
+        {/* Stats Grid */ }
+    {
+        stats && (
+            <div className=\"grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4\">
+                < StatCard
+        icon = {< Activity className =\"w-8 h-8 text-sky-600\" />}
+        label =\"Hôm nay\"
+        value = { stats.today.totalSessions }
+        subtext = {`${stats.today.completedSessions} hoàn thành`
+    }
+    color =\"sky\"
+        />
+        <StatCard
+            icon={<Calendar className=\"w-8 h-8 text-teal-600\" />}
+    label =\"Tuần này\"
+    value = { stats.thisWeek.totalSessions }
+    subtext = {`${stats.thisWeek.newPatients} BN mới`
+}
+color =\"teal\"
+    />
+    <StatCard
+        icon={<TrendingUp className=\"w-8 h-8 text-emerald-600\" />}
+label =\"Tháng này\"
+value = { stats.thisMonth.totalSessions }
+subtext = {`${stats.thisMonth.newPatients} BN mới`}
+color =\"emerald\"
+    />
+    <StatCard
+        icon={<Users className=\"w-8 h-8 text-indigo-600\" />}
+label =\"Tổng bệnh nhân\"
+value = { stats.total.patients }
+subtext = {`${stats.total.sessions} lần khám`}
+color =\"indigo\"
+    />
+                    </div >
+                )}
+
+{/* Patients List */ }
+<Card variant=\"elevated\" padding=\"none\" className=\"animate-fade-in\">
+    < div className =\"p-5 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200\">
+        < h3 className =\"font-bold text-slate-800 text-lg flex items-center gap-2\">
+                            👥 Danh sách bệnh nhân
+                        </h3 >
+    <p className=\"text-sm text-slate-600 mt-1\">Click vào bệnh nhân để xem lịch sử khám</p>
+                    </div >
+    <div className=\"overflow-x-auto\">
+{
+    patients.length === 0 ? (
+        <div className=\"text-center py-12\">
+            < div className =\"text-6xl mb-4 opacity-40\">👤</div>
+                < p className =\"text-slate-400 font-medium\">Chưa có bệnh nhân nào</p>
+                            </div >
+                        ) : (
+        <table className=\"w-full\">
+            < thead className =\"bg-slate-100 border-b border-slate-200\">
+                < tr >
+                <th className=\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Mã BN</th>
+                    < th className =\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Tên bệnh nhân</th>
+                        < th className =\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Tuổi/Giới tính</th>
+                            < th className =\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Số lần khám</th>
+                                < th className =\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Khám gần nhất</th>
+                                    < th className =\"px-6 py-3 text-left text-sm font-semibold text-slate-700\">Trạng thái</th>
+                                        < th className =\"px-6 py-3 text-center text-sm font-semibold text-slate-700\">Thao tác</th>
+                                    </tr >
+                                </thead >
+        <tbody>
+            {patients.map((patient, idx) => (
+                <tr
+                    key={patient.id}
+                    className=\"border-b border-slate-100 hover:bg-sky-50/50 transition cursor-pointer\"
+            onClick={() => handleRowClick(patient.displayId)}
+            style={{ animationDelay: `${idx * 50}ms` }}
+                                        >
+            <td className=\"px-6 py-4\">
+            <span className=\"font-mono text-sm font-bold text-sky-600\">
+            {patient.displayId}
+        </span>
+                                            </td >
+        <td className=\"px-6 py-4\">
+            < div className =\"font-medium text-slate-800\">{patient.name}</div>
+                                            </td >
+        <td className=\"px-6 py-4 text-slate-600\">
+    { patient.age ? `${patient.age} tuổi` : 'N/A' } / {patient.gender}
+                                            </td >
+        <td className=\"px-6 py-4 text-slate-600\">
+            < span className =\"font-semibold\">{patient.totalVisits}</span> lần
+                                            </td >
+        <td className=\"px-6 py-4 text-sm text-slate-500\">
+    { new Date(patient.lastVisitDate).toLocaleDateString('vi-VN') }
+                                            </td >
+        <td className=\"px-6 py-4\">
+            < StatusBadge status = { patient.lastVisitStatus } />
+                                            </td >
+        <td className=\"px-6 py-4\">
+            < div className =\"flex items-center gap-2 justify-center\">
+                < Button
+    variant =\"primary\"
+    onClick = {(e) => handleQuickExam(patient.id, e)
+}
+className =\"px-3 py-2 text-xs flex items-center gap-1\"
+title =\"Tái khám/Khám mới\"
+    >
+    <Stethoscope className=\"w-4 h-4\" />
+Khám
+                                                    </Button >
+    <Button
+        variant=\"danger\"
+onClick = {(e) => handleDeletePatient(patient.id, patient.displayId, e)}
+className =\"px-3 py-2 text-xs flex items-center gap-1\"
+disabled = { deletingPatientId === patient.id}
+title =\"Xóa bệnh nhân\"
+    >
+    { deletingPatientId === patient.id ? (
+    <span className=\"animate-spin\">⏳</span>
+                                                        ) : (
+    <Trash2 className=\"w-4 h-4\" />
+                                                        )}
+Xóa
+                                                    </Button >
+                                                </div >
+                                            </td >
+                                        </tr >
+                                    ))}
+                                </tbody >
+                            </table >
+                        )}
+                    </div >
+                </Card >
+            </div >
+
+    {/* Modals */ }
+{
+    showPatientSearch && (
+        <PatientSearchModal
+            onClose={() => setShowPatientSearch(false)}
+            onPatientSelect={handlePatientSelected}
+        />
+    )
+}
+
+{
+    showPatientForm && (
+        <PatientFormModal
+            onClose={() => setShowPatientForm(false)}
+            onPatientCreated={handlePatientCreated}
+        />
+    )
+}
+        </div >
+    );
+}
+
+// StatCard Component
+function StatCard({
+    icon,
+    label,
+    value,
+    subtext,
+    color
+}: {
+    icon: React.ReactNode;
+    label: string;
+    value: number;
+    subtext: string;
+    color: string;
+}) {
+    const colorClasses = {
+        sky: 'from-sky-50 to-sky-100 border-sky-200',
+        teal: 'from-teal-50 to-teal-100 border-teal-200',
+        emerald: 'from-emerald-50 to-emerald-100 border-emerald-200',
+        indigo: 'from-indigo-50 to-indigo-100 border-indigo-200',
+    };
+
+    return (
+        <Card
+            variant=\"elevated\"
+    className = {`bg-gradient-to-br ${colorClasses[color as keyof typeof colorClasses]} border`
+}
+        >
+    <div className=\"flex items-start gap-4\">
+        < div className =\"p-3 bg-white rounded-xl shadow-sm\">
+{ icon }
+                </div >
+    <div className=\"flex-1\">
+        < p className =\"text-sm text-slate-600 font-medium\">{label}</p>
+            < p className =\"text-3xl font-bold text-slate-900 mt-1\">{value}</p>
+                < p className =\"text-xs text-slate-500 mt-1\">{subtext}</p>
+                </div >
+            </div >
+        </Card >
+    );
+}
+
+// StatusBadge Component
+function StatusBadge({ status }: { status: string }) {
+    const statusConfig = {
+        'completed': { label: 'Hoàn thành', variant: 'success' },
+        'active': { label: 'Đang khám', variant: 'warning' },
+        'draft': { label: 'Nháp', variant: 'default' },
+        'never_visited': { label: 'Chưa khám', variant: 'default' },
+    };
+
+    const config = statusConfig[status as keyof typeof statusConfig] || { label: status, variant: 'default' };
+
+    return <Badge variant={config.variant as any}>{config.label}</Badge>;
+}

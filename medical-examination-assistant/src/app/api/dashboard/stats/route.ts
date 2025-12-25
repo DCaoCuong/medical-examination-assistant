@@ -1,15 +1,23 @@
 import { NextResponse } from 'next/server';
-import { getDashboardStats, getRecentSessions } from '@/lib/services/dashboardService';
+import { getDashboardStats, getPatientsList } from '@/lib/services/dashboardService';
 
-export async function GET() {
+export async function GET(request: Request) {
     try {
+        const { searchParams } = new URL(request.url);
+        const page = parseInt(searchParams.get('page') || '1');
+        const limit = parseInt(searchParams.get('limit') || '50');
+
         const stats = await getDashboardStats();
-        const recentSessions = await getRecentSessions(5);
+        const patients = await getPatientsList(limit, page);
 
         return NextResponse.json({
             success: true,
             stats,
-            recentSessions
+            patients, // Trả về danh sách bệnh nhân thay vì sessions
+            pagination: {
+                page,
+                limit
+            }
         });
 
     } catch (error) {

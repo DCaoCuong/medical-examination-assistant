@@ -236,7 +236,19 @@ export async function getPatientByDisplayId(displayId: string): Promise<Patient 
 }
 
 /**
+ * Remove Vietnamese accents from a string for accent-insensitive search
+ */
+function removeVietnameseAccents(str: string): string {
+    return str
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/đ/g, 'd')
+        .replace(/Đ/g, 'D');
+}
+
+/**
  * Search patients by name, phone, or displayId
+ * Supports accent-insensitive search for Vietnamese names
  */
 export async function searchPatients(
     query: string,
@@ -246,15 +258,9 @@ export async function searchPatients(
     const limit = options.limit || 20;
     const offset = (page - 1) * limit;
 
-    // Search in name, phoneNumber, or displayId
-    const searchCondition = or(
-        like(patients.name, `%${query}%`),
-        like(patients.phoneNumber, `%${query}%`),
-        like(patients.displayId, `%${query}%`)
-    );
-
-    // Get matching patients
-    const results = await db
+    // Get ALL patients (we'll filter client-side for accent-insensitive search)
+    // This is acceptable for small-medium datasets; for large datasets, consider full-text search
+    const allPatients = await db
         .select({
             id: patients.id,
             displayId: patients.displayId,
@@ -263,22 +269,32 @@ export async function searchPatients(
             phoneNumber: patients.phoneNumber,
         })
         .from(patients)
-        .where(searchCondition)
-        .orderBy(desc(patients.createdAt))
-        .limit(limit)
-        .offset(offset);
+        .orderBy(desc(patients.createdAt));
 
-    // Get total count
-    const countResult = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(patients)
-        .where(searchCondition);
+    // Normalize query for accent-insensitive search
+    const normalizedQuery = removeVietnameseAccents(query.toLowerCase());
 
-    const total = countResult[0]?.count || 0;
+    // Filter patients client-side
+    const filteredPatients = allPatients.filter(patient => {
+        const normalizedName = removeVietnameseAccents((patient.name || '').toLowerCase());
+        const normalizedPhone = (patient.phoneNumber || '').toLowerCase();
+        const normalizedDisplayId = (patient.displayId || '').toLowerCase();
+
+        return (
+            normalizedName.includes(normalizedQuery) ||
+            normalizedPhone.includes(normalizedQuery) ||
+            normalizedDisplayId.includes(normalizedQuery)
+        );
+    });
+
+    const total = filteredPatients.length;
+
+    // Apply pagination
+    const paginatedResults = filteredPatients.slice(offset, offset + limit);
 
     // TODO: Add totalVisits and lastVisitDate from examination_sessions
     // For now, return placeholder values
-    const enrichedResults: PatientSearchResult[] = results.map(p => ({
+    const enrichedResults: PatientSearchResult[] = paginatedResults.map(p => ({
         ...p,
         totalVisits: 0,
         lastVisitDate: null
@@ -356,3 +372,49 @@ export async function updatePatient(
 
     return getPatientById(patientId);
 }
+
+/**
+ * Delete patient and cascade delete all associated records
+ * This will delete:
+ * - All examination sessions
+ * - All medical records
+ * - The patient record itself
+ */
+export async function deletePatient(patientId: string): Promise<{ success: boolean; error?: string }> {
+    try {
+        // Import schemas
+        const { examinationSessions, medicalRecords } = await import('@/lib/db');
+
+        // 1. Get all sessions for this patient
+        const patientSessions = await db
+            .select({ id: examinationSessions.id })
+            .from(examinationSessions)
+            .where(eq(examinationSessions.patientId, patientId));
+
+        // 2. Delete all medical records for these sessions
+        for (const session of patientSessions) {
+            await db
+                .delete(medicalRecords)
+                .where(eq(medicalRecords.sessionId, session.id));
+        }
+
+        // 3. Delete all examination sessions
+        await db
+            .delete(examinationSessions)
+            .where(eq(examinationSessions.patientId, patientId));
+
+        // 4. Finally, delete the patient
+        await db
+            .delete(patients)
+            .where(eq(patients.id, patientId));
+
+        return { success: true };
+    } catch (error) {
+        console.error('Error deleting patient:', error);
+        return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error'
+        };
+    }
+}
+
