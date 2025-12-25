@@ -18,16 +18,11 @@ interface PatientFormData {
 }
 
 interface PatientFormModalProps {
-    isOpen: boolean;
     onClose: () => void;
-    onSuccess?: (patientId: string) => void;
+    onPatientCreated: (patientId: string) => void;
 }
 
-export default function PatientFormModal({
-    isOpen,
-    onClose,
-    onSuccess
-}: PatientFormModalProps) {
+export default function PatientFormModal({ onClose, onPatientCreated }: PatientFormModalProps) {
     const [loading, setLoading] = useState(false);
     const [duplicates, setDuplicates] = useState<any[]>([]);
     const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
@@ -49,11 +44,8 @@ export default function PatientFormModal({
             const result = await res.json();
 
             if (result.success) {
-                // Success
                 console.log('Patient created:', result.patient);
-                if (onSuccess) {
-                    onSuccess(result.patient.id);
-                }
+                onPatientCreated(result.patient.id);
                 reset();
                 onClose();
             } else if (result.error === 'POSSIBLE_DUPLICATE') {
@@ -72,9 +64,7 @@ export default function PatientFormModal({
     };
 
     const handleUseExisting = (patient: any) => {
-        if (onSuccess) {
-            onSuccess(patient.id);
-        }
+        onPatientCreated(patient.id);
         setShowDuplicateWarning(false);
         reset();
         onClose();
@@ -84,8 +74,6 @@ export default function PatientFormModal({
         setShowDuplicateWarning(false);
         handleSubmit((data) => onSubmit(data, true))();
     };
-
-    if (!isOpen) return null;
 
     // Duplicate Warning View
     if (showDuplicateWarning) {
