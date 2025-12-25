@@ -3,7 +3,6 @@
 import { Suspense } from 'react';
 import dynamic from 'next/dynamic';
 
-// Dynamically import the main content component
 const HomeContent = dynamic(() => import('./HomeContent').then((mod) => mod.default), {
   ssr: false,
   loading: () => (
