@@ -2,7 +2,180 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Tabs, Textarea, type TabItem } from './ui';
-import { Sparkles, Save } from 'lucide-react';
+import { Sparkles, Save, Lightbulb, BookOpen, ChevronRight, AlertCircle } from 'lucide-react';
+
+// Helper: Parse markdown table to structured data
+interface TableData {
+    headers: string[];
+    rows: string[][];
+}
+
+function parseMarkdownTable(text: string): { beforeTable: string; table: TableData | null; afterTable: string } {
+    const lines = text.split('\n');
+    let tableStartIndex = -1;
+    let tableEndIndex = -1;
+
+    // Find table boundaries
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('|') && line.endsWith('|')) {
+            if (tableStartIndex === -1) tableStartIndex = i;
+            tableEndIndex = i;
+        } else if (tableStartIndex !== -1 && tableEndIndex !== -1 && line !== '') {
+            break;
+        }
+    }
+
+    if (tableStartIndex === -1) {
+        return { beforeTable: text, table: null, afterTable: '' };
+    }
+
+    const beforeTable = lines.slice(0, tableStartIndex).join('\n').trim();
+    const afterTable = lines.slice(tableEndIndex + 1).join('\n').trim();
+    const tableLines = lines.slice(tableStartIndex, tableEndIndex + 1);
+
+    // Parse headers
+    const headerLine = tableLines[0];
+    const headers = headerLine
+        .split('|')
+        .filter(cell => cell.trim() !== '')
+        .map(cell => cell.trim());
+
+    // Parse rows (skip separator line)
+    const rows: string[][] = [];
+    for (let i = 2; i < tableLines.length; i++) {
+        const cells = tableLines[i]
+            .split('|')
+            .filter(cell => cell.trim() !== '')
+            .map(cell => cell.trim());
+        if (cells.length > 0) {
+            rows.push(cells);
+        }
+    }
+
+    return { beforeTable, table: { headers, rows }, afterTable };
+}
+
+// AI Advice Display Component
+function AIAdviceDisplay({ advice }: { advice: string }) {
+    const { beforeTable, table, afterTable } = parseMarkdownTable(advice);
+
+    return (
+        <div className="rounded-xl overflow-hidden shadow-lg border border-sky-100 animate-fade-in">
+            {/* Header with gradient */}
+            <div className="bg-gradient-to-r from-sky-500 via-cyan-500 to-teal-500 px-5 py-4">
+                <div className="flex items-center gap-3">
+                    <div className="p-2 bg-white/20 rounded-lg backdrop-blur-sm">
+                        <Lightbulb className="w-5 h-5 text-white" />
+                    </div>
+                    <div>
+                        <h4 className="text-lg font-bold text-white">
+                            Gợi ý từ AI Medical Expert
+                        </h4>
+                    </div>
+                </div>
+            </div>
+
+            {/* Content */}
+            <div className="bg-gradient-to-b from-sky-50 to-white p-5 space-y-4">
+                {/* Before table content */}
+                {beforeTable && (
+                    <div className="text-slate-700 leading-relaxed whitespace-pre-wrap">
+                        {beforeTable.split('\n').map((line, i) => {
+                            // Highlight bold text
+                            if (line.includes('**')) {
+                                const parts = line.split(/\*\*(.*?)\*\*/g);
+                                return (
+                                    <p key={i} className="mb-2">
+                                        {parts.map((part, j) =>
+                                            j % 2 === 1
+                                                ? <span key={j} className="font-semibold text-sky-700">{part}</span>
+                                                : part
+                                        )}
+                                    </p>
+                                );
+                            }
+                            return <p key={i} className="mb-2">{line}</p>;
+                        })}
+                    </div>
+                )}
+
+                {/* Styled Table */}
+                {table && (
+                    <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
+                        <table className="w-full text-sm">
+                            <thead>
+                                <tr className="bg-gradient-to-r from-slate-100 to-slate-50">
+                                    {table.headers.map((header, i) => (
+                                        <th
+                                            key={i}
+                                            className="px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200"
+                                        >
+                                            {header}
+                                        </th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {table.rows.map((row, rowIndex) => (
+                                    <tr
+                                        key={rowIndex}
+                                        className="hover:bg-sky-50/50 transition-colors duration-150 border-b border-slate-100 last:border-0"
+                                    >
+                                        {row.map((cell, cellIndex) => (
+                                            <td
+                                                key={cellIndex}
+                                                className="px-4 py-3 text-slate-600"
+                                            >
+                                                {/* First column (index) styling */}
+                                                {cellIndex === 0 ? (
+                                                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-sky-100 text-sky-700 font-semibold text-xs">
+                                                        {cell}
+                                                    </span>
+                                                ) : (
+                                                    <div className="flex items-start gap-2">
+                                                        {/* Add icon for recommendation column */}
+                                                        {cellIndex === 1 && (
+                                                            <ChevronRight className="w-4 h-4 text-teal-500 mt-0.5 flex-shrink-0" />
+                                                        )}
+                                                        {/* Add book icon for citation column */}
+                                                        {cellIndex === 2 && cell && (
+                                                            <BookOpen className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
+                                                        )}
+                                                        <span className={cellIndex === 1 ? "font-medium text-slate-700" : "text-slate-500 italic"}>
+                                                            {cell.split('<br>').map((part, i) => (
+                                                                <span key={i}>
+                                                                    {part}
+                                                                    {i < cell.split('<br>').length - 1 && <br />}
+                                                                </span>
+                                                            ))}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        ))}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {/* After table content */}
+                {afterTable && (
+                    <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                        <div className="flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5 flex-shrink-0" />
+                            <p className="text-sm text-amber-800 leading-relaxed whitespace-pre-wrap">
+                                {afterTable}
+                            </p>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
 
 interface AIResults {
     soap: {
@@ -303,16 +476,9 @@ export default function MedicalRecordReview({
                         helperText="Chi tiết về thuốc, liều dùng, tái khám và lời khuyên cho bệnh nhân"
                     />
 
-                    {/* AI Medical Advice (Read-only) */}
+                    {/* AI Medical Advice (Read-only) - Enhanced Display */}
                     {aiResults.medicalAdvice && (
-                        <div className="p-4 bg-sky-50 border-l-4 border-sky-500 rounded">
-                            <h4 className="text-sm font-semibold text-sky-900 mb-2">
-                                💡 Gợi ý từ AI Medical Expert
-                            </h4>
-                            <p className="text-sm text-slate-700 whitespace-pre-wrap">
-                                {aiResults.medicalAdvice}
-                            </p>
-                        </div>
+                        <AIAdviceDisplay advice={aiResults.medicalAdvice} />
                     )}
                 </div>
             ),
