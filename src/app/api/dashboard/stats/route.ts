@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getDashboardStats, getPatientsList } from '@/lib/services/dashboardService';
+import { getDashboardStats, getBookingsList } from '@/lib/services/dashboardService';
 
 export async function GET(request: Request) {
     try {
@@ -8,12 +8,13 @@ export async function GET(request: Request) {
         const limit = parseInt(searchParams.get('limit') || '50');
 
         const stats = await getDashboardStats();
-        const patients = await getPatientsList(limit, page);
+        const bookings = await getBookingsList(limit, page);
 
         return NextResponse.json({
             success: true,
             stats,
-            patients,
+            bookings,  // Changed from 'patients' to 'bookings'
+            patients: bookings, // Keep for backwards compatibility
             pagination: {
                 page,
                 limit

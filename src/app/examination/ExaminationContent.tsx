@@ -38,7 +38,8 @@ interface AnalysisResult {
 
 export default function ExaminationPage() {
     const searchParams = useSearchParams();
-    const patientId = searchParams.get('patientId');
+    const bookingId = searchParams.get('bookingId');
+    const patientId = searchParams.get('patientId'); // Legacy support
 
     // Session Management State  
     const [currentSession, setCurrentSession] = useState<Session | null>(null);
@@ -59,12 +60,13 @@ export default function ExaminationPage() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
 
-    // Auto-create session if patientId provided
+    // Auto-create session if bookingId or patientId provided
     useEffect(() => {
-        if (patientId && !currentSession && !isCreatingSession) {
-            createSessionForPatient(patientId);
+        const id = bookingId || patientId;
+        if (id && !currentSession && !isCreatingSession) {
+            createSessionForBookingOrPatient(id);
         }
-    }, [patientId]);
+    }, [bookingId, patientId]);
 
     // Keyboard shortcut: Space to toggle recording
     useEffect(() => {
@@ -88,13 +90,19 @@ export default function ExaminationPage() {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [isRecording, transcripts.length, loading]);
 
-    const createSessionForPatient = async (patientId: string) => {
+    // Create session for a booking or patient
+    const createSessionForBookingOrPatient = async (id: string) => {
         setIsCreatingSession(true);
         try {
+            // Determine if this is a bookingId or patientId based on URL param
+            const requestBody = bookingId
+                ? { bookingId: id, chiefComplaint: '' }
+                : { patientId: id, chiefComplaint: '' };
+
             const response = await fetch('/api/session/create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ patientId, chiefComplaint: '' })
+                body: JSON.stringify(requestBody)
             });
 
             const result = await response.json();

@@ -497,14 +497,14 @@ export default function MedicalRecordReview({
                             Xem lại kết quả AI và chỉnh sửa nếu cần trước khi lưu bệnh án chính thức
                         </p>
                     </div>
-                    <Button
+                    {/* <Button
                         variant="secondary"
                         onClick={handleMagicFill}
                         className="flex items-center gap-2 px-4 py-2"
                     >
                         <Sparkles className="w-4 h-4" />
                         Phê duyệt nhanh AI
-                    </Button>
+                    </Button> */}
                 </div>
             </div>
 

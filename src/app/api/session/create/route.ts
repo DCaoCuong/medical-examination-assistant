@@ -1,18 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSession, type SessionInput } from '@/lib/services/sessionService';
+import { createSession, createSessionFromBooking, type SessionInput } from '@/lib/services/sessionService';
 import { createUser, forceCreateUser, type UserInput } from '@/lib/services/userService';
 
 /**
  * POST /api/session/create
  * Create a new examination session
  * 
- * COMPATIBILITY MODE: Supports both old (patientName) and new (patientId) formats
+ * SUPPORTS:
+ * - bookingId: Create session from booking (NEW - primary method)
+ * - patientId: Create session from patient (Legacy)
+ * - patientName: Auto-create patient first (Legacy)
  */
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
 
-        // NEW FORMAT: patientId provided - direct session creation
+        // NEW FORMAT: bookingId provided - create session from booking
+        if (body.bookingId) {
+            const session = await createSessionFromBooking(
+                body.bookingId,
+                body.chiefComplaint
+            );
+
+            return NextResponse.json({
+                success: true,
+                message: 'Phiên khám đã được tạo thành công',
+                data: session
+            });
+        }
+
+        // LEGACY FORMAT: patientId provided - direct session creation
         if (body.patientId) {
             const sessionInput: SessionInput = {
                 patientId: body.patientId,
@@ -75,7 +92,7 @@ export async function POST(request: NextRequest) {
             {
                 success: false,
                 error: 'Validation error',
-                message: 'Tên bệnh nhân hoặc mã bệnh nhân là bắt buộc'
+                message: 'Mã booking, tên bệnh nhân hoặc mã bệnh nhân là bắt buộc'
             },
             { status: 400 }
         );

@@ -33,6 +33,6 @@ export { usersSchema, bookingSchema, sessionSchema, comparisonSchema };
 
 // Export specific tables for convenience
 export { users } from './schema-users';
-export { clinics, services, clinic_services } from './schema-booking';
+export { clinics, services, clinic_services, bookings } from './schema-booking';
 export { examinationSessions, medicalRecords } from './schema-session';
 export { comparisonRecords } from './schema';

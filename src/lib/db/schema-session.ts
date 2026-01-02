@@ -1,21 +1,24 @@
 import { pgTable, uuid, varchar, text, integer, timestamp, jsonb } from 'drizzle-orm/pg-core';
 import { users } from './schema-users';
-import { clinic_services } from './schema-booking';
+import { clinic_services, bookings } from './schema-booking';
 
 /**
  * Examination Sessions Table
- * Tracks patient visits and links to optional appointments from Booking system
+ * Tracks patient visits and links to bookings from Booking Clinic system
  */
 export const examinationSessions = pgTable('examination_sessions', {
     // Primary Key
     id: uuid('id').primaryKey().defaultRandom(),
 
-    // Patient Link (Foreign Key to unified users table)
+    // Patient Link (Legacy - kept for backwards compatibility, now nullable)
     patientId: uuid('patient_id')
-        .references(() => users.id, { onDelete: 'cascade' })
-        .notNull(),
+        .references(() => users.id, { onDelete: 'cascade' }),
 
-    // Link to Booking appointment (optional)
+    // Booking Link (NEW - primary way to link to patient from Booking Clinic)
+    bookingId: uuid('booking_id')
+        .references(() => bookings.id, { onDelete: 'cascade' }),
+
+    // Link to Booking appointment (optional - legacy)
     appointmentId: uuid('appointment_id')
         .references(() => clinic_services.id, { onDelete: 'set null' }),
 

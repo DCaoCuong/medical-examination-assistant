@@ -1,4 +1,4 @@
-import { db } from '../db';
+import { db, bookings } from '../db';
 import { examinationSessions, medicalRecords } from '../db/schema-session';
 import { users } from '../db/schema-users';
 import { eq, desc, sql, and } from 'drizzle-orm';
@@ -7,14 +7,16 @@ import { updateVisit, type MedicalPayload } from '../integrations/hisClient';
 // ============= Types =============
 
 export interface SessionInput {
-    patientId: string; // Required - link to patient
+    patientId?: string; // Legacy - link to users table
+    bookingId?: string; // NEW - link to bookings table (preferred)
     chiefComplaint?: string; // Reason for this visit
     visitId?: string; // Optional, from HIS system
 }
 
 export interface Session {
     id: string;
-    patientId: string;
+    patientId: string | null;
+    bookingId: string | null;
     visitNumber: number;
     chiefComplaint: string | null;
     visitId: string | null;
@@ -32,6 +34,18 @@ export interface SessionWithPatient extends Session {
         gender: string | null;
         phoneNumber: string | null;
         medicalHistory: string | null;
+    };
+}
+
+export interface SessionWithBooking extends Session {
+    booking: {
+        id: string;
+        displayId: string | null;
+        patientName: string;
+        patientPhone: string;
+        age: number | null;
+        gender: string | null;
+        symptoms: string | null;
     };
 }
 
@@ -61,10 +75,52 @@ export interface MedicalRecord {
 // ============= Session Management =============
 
 /**
- * Create a new examination session for an existing patient
+ * Create a new examination session for a booking
+ * This is the primary method for creating sessions from Booking Clinic
+ */
+export async function createSessionFromBooking(bookingId: string, chiefComplaint?: string): Promise<Session> {
+    // Get visit number for this booking
+    const countResult = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(examinationSessions)
+        .where(eq(examinationSessions.bookingId, bookingId));
+
+    const visitNumber = (countResult[0]?.count || 0) + 1;
+
+    // Prepare session data
+    const sessionData = {
+        bookingId,
+        patientId: null, // Not using patient_id for booking-based sessions
+        visitNumber,
+        chiefComplaint: chiefComplaint || null,
+        visitId: null,
+        status: 'active' as const,
+        appointmentId: null,
+    };
+
+    // Insert into database and return
+    const result = await db.insert(examinationSessions).values(sessionData).returning();
+
+    const session = result[0];
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
+}
+
+/**
+ * Create a new examination session for an existing patient (Legacy)
  */
 export async function createSession(input: SessionInput): Promise<Session> {
-    // PostgreSQL will auto-generate UUID
+    // If bookingId is provided, use the new method
+    if (input.bookingId) {
+        return createSessionFromBooking(input.bookingId, input.chiefComplaint);
+    }
+
+    // Legacy: Use patientId (for backwards compatibility)
+    if (!input.patientId) {
+        throw new Error('Either patientId or bookingId is required');
+    }
 
     // Get visit number for this patient using count
     const countResult = await db
@@ -77,11 +133,12 @@ export async function createSession(input: SessionInput): Promise<Session> {
     // Prepare session data (PostgreSQL will handle timestamps)
     const sessionData = {
         patientId: input.patientId,
+        bookingId: null,
         visitNumber,
         chiefComplaint: input.chiefComplaint || null,
         visitId: input.visitId || null,
         status: 'active' as const,
-        appointmentId: null, // Can be set later if linking to appointment
+        appointmentId: null,
     };
 
     // Insert into database and return
@@ -114,7 +171,48 @@ export async function getSession(sessionId: string): Promise<Session | null> {
 }
 
 /**
- * Get session with patient info
+ * Get session with booking info (NEW - for booking-based workflow)
+ */
+export async function getSessionWithBooking(sessionId: string): Promise<SessionWithBooking | null> {
+    const results = await db
+        .select({
+            session: examinationSessions,
+            booking: bookings
+        })
+        .from(examinationSessions)
+        .leftJoin(bookings, eq(examinationSessions.bookingId, bookings.id))
+        .where(eq(examinationSessions.id, sessionId))
+        .limit(1);
+
+    if (!results[0]) return null;
+
+    const { session, booking } = results[0];
+
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled',
+        booking: booking ? {
+            id: booking.id,
+            displayId: booking.displayId,
+            patientName: booking.patientName,
+            patientPhone: booking.patientPhone,
+            age: booking.age,
+            gender: booking.gender,
+            symptoms: booking.symptoms,
+        } : {
+            id: '',
+            displayId: null,
+            patientName: 'Unknown',
+            patientPhone: '',
+            age: null,
+            gender: null,
+            symptoms: null,
+        }
+    };
+}
+
+/**
+ * Get session with patient info (Legacy - for patient-based workflow)
  */
 export async function getSessionWithPatient(sessionId: string): Promise<SessionWithPatient | null> {
     const results = await db
@@ -136,12 +234,12 @@ export async function getSessionWithPatient(sessionId: string): Promise<SessionW
 
     return {
         ...session,
-        status: session.status as 'active' | 'completed' | 'cancelled',  // Type assertion for status
+        status: session.status as 'active' | 'completed' | 'cancelled',
         patient: patient ? {
             id: patient.id,
             displayId: patient.displayId || 'N/A',
             name: patient.name,
-            birthDate: patient.birthDate || null,  // Already a string (YYYY-MM-DD) from PostgreSQL DATE
+            birthDate: patient.birthDate || null,
             gender: patient.gender,
             phoneNumber: patient.phone,
             medicalHistory: patient.medicalHistory
