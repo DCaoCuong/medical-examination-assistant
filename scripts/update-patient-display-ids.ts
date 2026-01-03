@@ -1,6 +1,6 @@
-import { db, users } from './src/lib/db';
+import { db, users } from '@/lib/db';
 import { eq, isNull, and } from 'drizzle-orm';
-import { generateDisplayId } from './src/lib/services/userService';
+import { generateDisplayId } from '@/lib/services/userService';
 
 /**
  * Migration script to add displayId to existing patients
