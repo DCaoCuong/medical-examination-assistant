@@ -254,18 +254,18 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                     <div className="mt-6">
                         <h4 className="font-bold text-gray-700 text-sm mb-2">ICD-10 Matching</h4>
                         <div className="flex flex-wrap gap-2">
-                            {comparison?.icdMatch.exactMatches.map(code => (
-                                <span key={code} className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded flex items-center gap-1">
+                            {comparison?.icdMatch.exactMatches.map((code, idx) => (
+                                <span key={`exact-${idx}-${code}`} className="px-2 py-1 bg-green-100 text-green-800 text-xs font-bold rounded flex items-center gap-1">
                                     {code} <Check className="w-3 h-3" />
                                 </span>
                             ))}
-                            {comparison?.icdMatch.aiOnly.map(code => (
-                                <span key={code} className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded flex items-center gap-1">
+                            {comparison?.icdMatch.aiOnly.map((code, idx) => (
+                                <span key={`ai-${idx}-${code}`} className="px-2 py-1 bg-yellow-100 text-yellow-800 text-xs font-bold rounded flex items-center gap-1">
                                     AI: {code}
                                 </span>
                             ))}
-                            {comparison?.icdMatch.doctorOnly.map(code => (
-                                <span key={code} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded flex items-center gap-1">
+                            {comparison?.icdMatch.doctorOnly.map((code, idx) => (
+                                <span key={`dr-${idx}-${code}`} className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded flex items-center gap-1">
                                     Dr: {code}
                                 </span>
                             ))}

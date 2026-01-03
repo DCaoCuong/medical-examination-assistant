@@ -1,18 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createSession, type SessionInput } from '@/lib/services/sessionService';
-import { createPatient, forceCreatePatient, type PatientInput } from '@/lib/services/patientService';
+import { createSession, createSessionFromBooking, type SessionInput } from '@/lib/services/sessionService';
+import { createUser, forceCreateUser, type UserInput } from '@/lib/services/userService';
 
 /**
  * POST /api/session/create
  * Create a new examination session
  * 
- * COMPATIBILITY MODE: Supports both old (patientName) and new (patientId) formats
+ * SUPPORTS:
+ * - bookingId: Create session from booking (NEW - primary method)
+ * - patientId: Create session from patient (Legacy)
+ * - patientName: Auto-create patient first (Legacy)
  */
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
 
-        // NEW FORMAT: patientId provided - direct session creation
+        // NEW FORMAT: bookingId provided - create session from booking
+        if (body.bookingId) {
+            const session = await createSessionFromBooking(
+                body.bookingId,
+                body.chiefComplaint
+            );
+
+            return NextResponse.json({
+                success: true,
+                message: 'Phiên khám đã được tạo thành công',
+                data: session
+            });
+        }
+
+        // LEGACY FORMAT: patientId provided - direct session creation
         if (body.patientId) {
             const sessionInput: SessionInput = {
                 patientId: body.patientId,
@@ -32,11 +49,12 @@ export async function POST(request: NextRequest) {
         // OLD FORMAT: patientName provided - auto-create patient first
         if (body.patientName) {
             // Step 1: Create patient from form data
-            const patientData: PatientInput = {
+            const patientData: UserInput = {
                 name: body.patientName,
+                email: `temp_${Date.now()}@placeholder.local`, // Temporary email
                 gender: body.patientInfo?.gender,
                 address: body.patientInfo?.address,
-                phoneNumber: body.patientInfo?.phoneNumber,
+                phone: body.patientInfo?.phoneNumber,
                 medicalHistory: body.medicalHistory,
                 // Calculate birthDate from age if provided
                 birthDate: body.patientInfo?.age
@@ -45,7 +63,7 @@ export async function POST(request: NextRequest) {
             };
 
             // Force create patient (bypass duplicate check for old flow)
-            const patient = await forceCreatePatient(patientData);
+            const patient = await forceCreateUser(patientData);
 
             // Step 2: Create session linked to patient
             const sessionInput: SessionInput = {
@@ -74,7 +92,7 @@ export async function POST(request: NextRequest) {
             {
                 success: false,
                 error: 'Validation error',
-                message: 'Tên bệnh nhân hoặc mã bệnh nhân là bắt buộc'
+                message: 'Mã booking, tên bệnh nhân hoặc mã bệnh nhân là bắt buộc'
             },
             { status: 400 }
         );

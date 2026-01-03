@@ -7,7 +7,7 @@ import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
 import PatientSearchModal from '@/components/PatientSearchModal';
 import PatientFormModal from '@/components/PatientFormModal';
-import { Search, UserPlus, TrendingUp, Users, Calendar, Activity, Stethoscope, Trash2 } from 'lucide-react';
+import { Search, UserPlus, TrendingUp, Users, Calendar, Activity, Stethoscope, Trash2, Phone, Clock } from 'lucide-react';
 
 interface DashboardStats {
     today: {
@@ -17,38 +17,40 @@ interface DashboardStats {
     };
     thisWeek: {
         totalSessions: number;
-        newPatients: number;
+        newBookings: number;
     };
     thisMonth: {
         totalSessions: number;
-        newPatients: number;
+        newBookings: number;
     };
     total: {
-        patients: number;
+        bookings: number;
         sessions: number;
     };
 }
 
-interface PatientSummary {
+interface BookingSummary {
     id: string;
-    displayId: string;
-    name: string;
+    displayId: string | null;
+    patientName: string;
+    patientPhone: string;
     age: number | null;
-    gender: string;
-    totalVisits: number;
-    lastVisitDate: string;
-    lastVisitStatus: string;
-    lastVisitId: string;
+    gender: string | null;
+    symptoms: string | null;
+    bookingTime: string;
+    status: string | null;
+    hasSession: boolean;
+    sessionStatus: string | null;
 }
 
 export default function DashboardPage() {
     const router = useRouter();
     const [stats, setStats] = useState<DashboardStats | null>(null);
-    const [patients, setPatients] = useState<PatientSummary[]>([]);
+    const [bookings, setBookings] = useState<BookingSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [showPatientSearch, setShowPatientSearch] = useState(false);
     const [showPatientForm, setShowPatientForm] = useState(false);
-    const [deletingPatientId, setDeletingPatientId] = useState<string | null>(null);
+    const [deletingBookingId, setDeletingBookingId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -71,7 +73,7 @@ export default function DashboardPage() {
 
             if (data.success) {
                 setStats(data.stats);
-                setPatients(data.patients);
+                setBookings(data.bookings || data.patients || []);
             }
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
@@ -91,30 +93,30 @@ export default function DashboardPage() {
     const handlePatientCreated = (patientId: string) => {
         setShowPatientForm(false);
         fetchDashboardData();
-        router.push(`/examination?patientId=${patientId}`);
+        router.push(`/examination?bookingId=${patientId}`);
     };
 
     const handlePatientSelected = (patientId: string, displayId: string) => {
         setShowPatientSearch(false);
-        router.push(`/patient/${displayId}/history`);
+        router.push(`/examination?bookingId=${patientId}`);
     };
 
-    const handleQuickExam = (patientId: string, e: React.MouseEvent) => {
+    const handleQuickExam = (bookingId: string, e: React.MouseEvent) => {
         e.stopPropagation();
-        router.push(`/examination?patientId=${patientId}`);
+        router.push(`/examination?bookingId=${bookingId}`);
     };
 
-    const handleDeletePatient = async (patientId: string, displayId: string, e: React.MouseEvent) => {
+    const handleDeleteBooking = async (bookingId: string, displayId: string | null, e: React.MouseEvent) => {
         e.stopPropagation();
 
-        if (!confirm(`Xóa toàn bộ hồ sơ bệnh nhân ${displayId}? Điều này sẽ xóa vĩnh viễn tất cả phiên khám và bệnh án.`)) {
+        if (!confirm(`Xóa lịch khám ${displayId || bookingId}? Điều này sẽ xóa vĩnh viễn lịch đặt và phiên khám liên quan.`)) {
             return;
         }
 
-        setDeletingPatientId(patientId);
+        setDeletingBookingId(bookingId);
 
         try {
-            const res = await fetch(`/api/patient/${patientId}`, {
+            const res = await fetch(`/api/booking/${bookingId}`, {
                 method: 'DELETE'
             });
 
@@ -122,20 +124,20 @@ export default function DashboardPage() {
 
             if (data.success) {
                 fetchDashboardData();
-                alert('Xóa hồ sơ bệnh nhân thành công!');
+                alert('Xóa lịch khám thành công!');
             } else {
                 alert('Lỗi: ' + data.message);
             }
         } catch (error) {
-            console.error('Error deleting patient:', error);
+            console.error('Error deleting booking:', error);
             alert('Lỗi kết nối. Vui lòng thử lại.');
         } finally {
-            setDeletingPatientId(null);
+            setDeletingBookingId(null);
         }
     };
 
-    const handleRowClick = (displayId: string) => {
-        router.push(`/patient/${displayId}/history`);
+    const handleRowClick = (bookingId: string) => {
+        router.push(`/examination?bookingId=${bookingId}`);
     };
 
     if (loading) {
@@ -161,12 +163,12 @@ export default function DashboardPage() {
                     <div className="flex gap-3">
                         <Button variant="secondary" onClick={handleSearch} className="flex items-center gap-2">
                             <Search className="w-5 h-5" />
-                            Tìm kiếm bệnh nhân
+                            Tìm kiếm
                             <span className="ml-2 text-xs bg-white/50 px-2 py-1 rounded font-mono">Ctrl+K</span>
                         </Button>
                         <Button variant="primary" onClick={handleNewPatient} className="flex items-center gap-2">
                             <UserPlus className="w-5 h-5" />
-                            Bệnh nhân mới
+                            Đặt lịch mới
                         </Button>
                     </div>
                 </div>
@@ -175,82 +177,98 @@ export default function DashboardPage() {
                 {stats && (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                         <StatCard icon={<Activity className="w-8 h-8 text-sky-600" />} label="Hôm nay" value={stats.today.totalSessions} subtext={`${stats.today.completedSessions} hoàn thành`} color="sky" />
-                        <StatCard icon={<Calendar className="w-8 h-8 text-teal-600" />} label="Tuần này" value={stats.thisWeek.totalSessions} subtext={`${stats.thisWeek.newPatients} BN mới`} color="teal" />
-                        <StatCard icon={<TrendingUp className="w-8 h-8 text-emerald-600" />} label="Tháng này" value={stats.thisMonth.totalSessions} subtext={`${stats.thisMonth.newPatients} BN mới`} color="emerald" />
-                        <StatCard icon={<Users className="w-8 h-8 text-indigo-600" />} label="Tổng bệnh nhân" value={stats.total.patients} subtext={`${stats.total.sessions} lần khám`} color="indigo" />
+                        <StatCard icon={<Calendar className="w-8 h-8 text-teal-600" />} label="Tuần này" value={stats.thisWeek.totalSessions} subtext={`${stats.thisWeek.newBookings} booking mới`} color="teal" />
+                        <StatCard icon={<TrendingUp className="w-8 h-8 text-emerald-600" />} label="Tháng này" value={stats.thisMonth.totalSessions} subtext={`${stats.thisMonth.newBookings} booking mới`} color="emerald" />
+                        <StatCard icon={<Users className="w-8 h-8 text-indigo-600" />} label="Tổng booking" value={stats.total.bookings} subtext={`${stats.total.sessions} lần khám`} color="indigo" />
                     </div>
                 )}
 
-                {/* Patients List */}
+                {/* Bookings List */}
                 <Card variant="elevated" padding="none" className="animate-fade-in">
                     <div className="p-5 bg-gradient-to-r from-slate-50 to-slate-100 border-b border-slate-200">
-                        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">👥 Danh sách bệnh nhân</h3>
-                        <p className="text-sm text-slate-600 mt-1">Click vào bệnh nhân để xem lịch sử khám</p>
+                        <h3 className="font-bold text-slate-800 text-lg flex items-center gap-2">📅 Danh sách lịch khám</h3>
+                        <p className="text-sm text-slate-600 mt-1">Click vào để bắt đầu khám bệnh</p>
                     </div>
                     <div className="overflow-x-auto">
-                        {patients.length === 0 ? (
+                        {bookings.length === 0 ? (
                             <div className="text-center py-12">
-                                <div className="text-6xl mb-4 opacity-40">👤</div>
-                                <p className="text-slate-400 font-medium">Chưa có bệnh nhân nào</p>
+                                <div className="text-6xl mb-4 opacity-40">📅</div>
+                                <p className="text-slate-400 font-medium">Chưa có lịch khám nào</p>
                             </div>
                         ) : (
                             <table className="w-full">
                                 <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Mã BN</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Mã lịch</th>
                                         <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tên bệnh nhân</th>
                                         <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tuổi/Giới tính</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Số lần khám</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Khám gần nhất</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">SĐT</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Thời gian đặt</th>
                                         <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Trạng thái</th>
                                         <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {patients.map((patient, idx) => (
+                                    {bookings.map((booking, idx) => (
                                         <tr
-                                            key={patient.id}
+                                            key={booking.id}
                                             className="border-b border-slate-100 hover:bg-sky-50/50 transition cursor-pointer"
-                                            onClick={() => handleRowClick(patient.displayId)}
+                                            onClick={() => handleRowClick(booking.id)}
                                             style={{ animationDelay: `${idx * 50}ms` }}
                                         >
                                             <td className="px-6 py-4">
-                                                <span className="font-mono text-sm font-bold text-sky-600">{patient.displayId}</span>
+                                                <span className="font-mono text-sm font-bold text-sky-600">{booking.displayId || booking.id.slice(0, 8)}</span>
                                             </td>
                                             <td className="px-6 py-4">
-                                                <div className="font-medium text-slate-800">{patient.name}</div>
+                                                <div className="font-medium text-slate-800">{booking.patientName}</div>
+                                                {booking.symptoms && (
+                                                    <div className="text-xs text-slate-500 mt-1 truncate max-w-xs">{booking.symptoms}</div>
+                                                )}
                                             </td>
                                             <td className="px-6 py-4 text-slate-600">
-                                                {patient.age ? `${patient.age} tuổi` : 'N/A'} / {patient.gender}
-                                            </td>
-                                            <td className="px-6 py-4 text-slate-600">
-                                                <span className="font-semibold">{patient.totalVisits}</span> lần
-                                            </td>
-                                            <td className="px-6 py-4 text-sm text-slate-500">
-                                                {new Date(patient.lastVisitDate).toLocaleDateString('vi-VN')}
+                                                {booking.age ? `${booking.age} tuổi` : 'N/A'} / {booking.gender || 'N/A'}
                                             </td>
                                             <td className="px-6 py-4">
-                                                <StatusBadge status={patient.lastVisitStatus} />
+                                                <div className="flex items-center gap-1 text-slate-600">
+                                                    <Phone className="w-3 h-3" />
+                                                    {booking.patientPhone}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-1 text-sm text-slate-500">
+                                                    <Clock className="w-3 h-3" />
+                                                    {new Date(booking.bookingTime).toLocaleDateString('vi-VN')}
+                                                </div>
+                                                <div className="text-xs text-slate-400">
+                                                    {new Date(booking.bookingTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
+                                                </div>
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <BookingStatusBadge
+                                                    status={booking.status}
+                                                    hasSession={booking.hasSession}
+                                                    sessionStatus={booking.sessionStatus}
+                                                />
                                             </td>
                                             <td className="px-6 py-4">
                                                 <div className="flex items-center gap-2 justify-center">
                                                     <Button
                                                         variant="primary"
-                                                        onClick={(e) => handleQuickExam(patient.id, e)}
+                                                        onClick={(e) => handleQuickExam(booking.id, e)}
                                                         className="px-3 py-2 text-xs flex items-center gap-1"
-                                                        title="Tái khám/Khám mới"
+                                                        title="Bắt đầu khám"
                                                     >
                                                         <Stethoscope className="w-4 h-4" />
                                                         Khám
                                                     </Button>
                                                     <Button
                                                         variant="danger"
-                                                        onClick={(e) => handleDeletePatient(patient.id, patient.displayId, e)}
+                                                        onClick={(e) => handleDeleteBooking(booking.id, booking.displayId, e)}
                                                         className="px-3 py-2 text-xs flex items-center gap-1"
-                                                        disabled={deletingPatientId === patient.id}
-                                                        title="Xóa bệnh nhân"
+                                                        disabled={deletingBookingId === booking.id}
+                                                        title="Xóa lịch khám"
                                                     >
-                                                        {deletingPatientId === patient.id ? (
+                                                        {deletingBookingId === booking.id ? (
                                                             <span className="animate-spin">⏳</span>
                                                         ) : (
                                                             <Trash2 className="w-4 h-4" />
@@ -298,15 +316,28 @@ function StatCard({ icon, label, value, subtext, color }: { icon: React.ReactNod
     );
 }
 
-// StatusBadge Component
-function StatusBadge({ status }: { status: string }) {
-    const statusConfig = {
+// BookingStatusBadge Component
+function BookingStatusBadge({ status, hasSession, sessionStatus }: { status: string | null; hasSession: boolean; sessionStatus: string | null }) {
+    // Priority: session status > booking status
+    if (hasSession && sessionStatus) {
+        const sessionConfig = {
+            'completed': { label: 'Hoàn thành', variant: 'success' },
+            'active': { label: 'Đang khám', variant: 'warning' },
+            'draft': { label: 'Nháp', variant: 'default' },
+        };
+        const config = sessionConfig[sessionStatus as keyof typeof sessionConfig] || { label: sessionStatus, variant: 'default' };
+        return <Badge variant={config.variant as any}>{config.label}</Badge>;
+    }
+
+    // Booking status
+    const bookingConfig = {
+        'pending': { label: 'Chờ xác nhận', variant: 'default' },
+        'confirmed': { label: 'Đã xác nhận', variant: 'info' },
+        'in_progress': { label: 'Đang khám', variant: 'warning' },
         'completed': { label: 'Hoàn thành', variant: 'success' },
-        'active': { label: 'Đang khám', variant: 'warning' },
-        'draft': { label: 'Nháp', variant: 'default' },
-        'never_visited': { label: 'Chưa khám', variant: 'default' },
+        'cancelled': { label: 'Đã hủy', variant: 'danger' },
     };
 
-    const config = statusConfig[status as keyof typeof statusConfig] || { label: status, variant: 'default' };
+    const config = bookingConfig[status as keyof typeof bookingConfig] || { label: status || 'Chưa khám', variant: 'default' };
     return <Badge variant={config.variant as any}>{config.label}</Badge>;
 }

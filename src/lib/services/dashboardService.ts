@@ -1,5 +1,5 @@
-import { db, examinationSessions, medicalRecords, patients } from '../db';
-import { eq, gte, desc, sql } from 'drizzle-orm';
+import { db, examinationSessions, medicalRecords, bookings } from '../db';
+import { eq, gte, desc, sql, and } from 'drizzle-orm';
 
 export interface DashboardStats {
     today: {
@@ -9,21 +9,21 @@ export interface DashboardStats {
     };
     thisWeek: {
         totalSessions: number;
-        newPatients: number;
+        newBookings: number;
     };
     thisMonth: {
         totalSessions: number;
-        newPatients: number;
+        newBookings: number;
     };
     total: {
-        patients: number;
+        bookings: number;
         sessions: number;
     };
 }
 
 export interface RecentSession {
     id: string;
-    patientId: string;
+    bookingId: string | null;
     patientName: string;
     patientDisplayId: string;
     visitNumber: number;
@@ -33,20 +33,24 @@ export interface RecentSession {
     diagnosis?: string;
 }
 
-export interface PatientSummary {
+export interface BookingSummary {
     id: string;
-    displayId: string;
-    name: string;
+    displayId: string | null;
+    patientName: string;
+    patientPhone: string;
     age: number | null;
     gender: string | null;
-    totalVisits: number;
-    lastVisitDate: Date;
-    lastVisitStatus: string;
-    lastVisitId: string;
+    symptoms: string | null;
+    bookingTime: Date;
+    status: string | null;
+    // Session info (if exists)
+    hasSession: boolean;
+    sessionStatus: string | null;
 }
 
 /**
  * Get dashboard statistics
+ * Now uses bookings table instead of users
  */
 export async function getDashboardStats(): Promise<DashboardStats> {
     const now = new Date();
@@ -72,11 +76,11 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         .from(examinationSessions)
         .where(gte(examinationSessions.createdAt, weekStart));
 
-    // This week's new patients
-    const weekNewPatients = await db
+    // This week's new bookings (from Booking Clinic)
+    const weekNewBookings = await db
         .select()
-        .from(patients)
-        .where(gte(patients.createdAt, weekStart));
+        .from(bookings)
+        .where(gte(bookings.createdAt, weekStart));
 
     // This month's sessions
     const monthSessions = await db
@@ -84,16 +88,16 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         .from(examinationSessions)
         .where(gte(examinationSessions.createdAt, monthStart));
 
-    // This month's new patients
-    const monthNewPatients = await db
+    // This month's new bookings
+    const monthNewBookings = await db
         .select()
-        .from(patients)
-        .where(gte(patients.createdAt, monthStart));
+        .from(bookings)
+        .where(gte(bookings.createdAt, monthStart));
 
     // Total counts
-    const totalPatientsResult = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(patients);
+    const totalBookingsResult = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(bookings);
 
     const totalSessionsResult = await db
         .select({ count: sql<number>`count(*)` })
@@ -107,21 +111,22 @@ export async function getDashboardStats(): Promise<DashboardStats> {
         },
         thisWeek: {
             totalSessions: weekSessions.length,
-            newPatients: weekNewPatients.length
+            newBookings: weekNewBookings.length
         },
         thisMonth: {
             totalSessions: monthSessions.length,
-            newPatients: monthNewPatients.length
+            newBookings: monthNewBookings.length
         },
         total: {
-            patients: totalPatientsResult[0]?.count || 0,
+            bookings: totalBookingsResult[0]?.count || 0,
             sessions: totalSessionsResult[0]?.count || 0
         }
     };
 }
 
 /**
- * Get sessions with patient info (with pagination)
+ * Get sessions with booking info (with pagination)
+ * Now joins with bookings instead of users
  */
 export async function getRecentSessions(limit: number = 50, page: number = 1): Promise<RecentSession[]> {
     const offset = (page - 1) * limit;
@@ -129,16 +134,16 @@ export async function getRecentSessions(limit: number = 50, page: number = 1): P
     const sessions = await db
         .select({
             sessionId: examinationSessions.id,
-            patientId: examinationSessions.patientId,
+            bookingId: examinationSessions.bookingId,
             visitNumber: examinationSessions.visitNumber,
             chiefComplaint: examinationSessions.chiefComplaint,
             status: examinationSessions.status,
             createdAt: examinationSessions.createdAt,
-            patientName: patients.name,
-            patientDisplayId: patients.displayId,
+            patientName: bookings.patientName,
+            patientDisplayId: bookings.displayId,
         })
         .from(examinationSessions)
-        .leftJoin(patients, eq(examinationSessions.patientId, patients.id))
+        .leftJoin(bookings, eq(examinationSessions.bookingId, bookings.id))
         .orderBy(desc(examinationSessions.createdAt))
         .limit(limit)
         .offset(offset);
@@ -154,7 +159,7 @@ export async function getRecentSessions(limit: number = 50, page: number = 1): P
 
             return {
                 id: session.sessionId,
-                patientId: session.patientId,
+                bookingId: session.bookingId,
                 patientName: session.patientName || 'Unknown',
                 patientDisplayId: session.patientDisplayId || 'N/A',
                 visitNumber: session.visitNumber,
@@ -170,65 +175,69 @@ export async function getRecentSessions(limit: number = 50, page: number = 1): P
 }
 
 /**
- * Get list of patients with summary info
+ * Get list of bookings with summary info for dashboard
+ * Only shows bookings that are:
+ * 1. Paid/Confirmed (ready for examination)
+ * 2. Still valid (booking_time >= start of today)
  */
-export async function getPatientsList(limit: number = 50, page: number = 1): Promise<PatientSummary[]> {
+export async function getBookingsList(limit: number = 50, page: number = 1): Promise<BookingSummary[]> {
     const offset = (page - 1) * limit;
 
-    // Get all patients with pagination
-    const patientsList = await db
+    // Calculate start of today for filtering
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    // Paid/confirmed status values - adjust if your system uses different values
+    const paidStatuses = ['paid', 'confirmed', 'approved'];
+
+    // Get bookings that are paid and still valid
+    const bookingsList = await db
         .select()
-        .from(patients)
-        .orderBy(desc(patients.createdAt))
+        .from(bookings)
+        .where(
+            and(
+                // Only show paid/confirmed bookings
+                sql`${bookings.status} = ANY(ARRAY[${sql.join(paidStatuses.map(s => sql`${s}`), sql`, `)}])`,
+                // Only show bookings with booking_time >= start of today
+                gte(bookings.bookingTime, todayStart)
+            )
+        )
+        .orderBy(desc(bookings.bookingTime))
         .limit(limit)
         .offset(offset);
 
-    // For each patient, get summary info
-    const patientsWithSummary = await Promise.all(
-        patientsList.map(async (patient) => {
-            // Count total visits
-            const visitsCount = await db
-                .select({ count: sql<number>`count(*)` })
-                .from(examinationSessions)
-                .where(eq(examinationSessions.patientId, patient.id));
-
-            // Get latest visit
-            const latestVisit = await db
+    // For each booking, check if there's an associated session
+    const bookingsWithSummary = await Promise.all(
+        bookingsList.map(async (booking) => {
+            // Check for existing session linked to this booking
+            const session = await db
                 .select({
                     id: examinationSessions.id,
                     status: examinationSessions.status,
-                    createdAt: examinationSessions.createdAt
                 })
                 .from(examinationSessions)
-                .where(eq(examinationSessions.patientId, patient.id))
+                .where(eq(examinationSessions.bookingId, booking.id))
                 .orderBy(desc(examinationSessions.createdAt))
                 .limit(1);
 
-            // Calculate age from birthDate
-            let age: number | null = null;
-            if (patient.birthDate) {
-                const birthDate = new Date(patient.birthDate);
-                const today = new Date();
-                age = today.getFullYear() - birthDate.getFullYear();
-                const monthDiff = today.getMonth() - birthDate.getMonth();
-                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                    age--;
-                }
-            }
-
             return {
-                id: patient.id,
-                displayId: patient.displayId,
-                name: patient.name,
-                age: age,
-                gender: patient.gender,
-                totalVisits: visitsCount[0]?.count || 0,
-                lastVisitDate: latestVisit[0]?.createdAt || patient.createdAt,
-                lastVisitStatus: latestVisit[0]?.status || 'never_visited',
-                lastVisitId: latestVisit[0]?.id || ''
+                id: booking.id,
+                displayId: booking.displayId,
+                patientName: booking.patientName,
+                patientPhone: booking.patientPhone,
+                age: booking.age,
+                gender: booking.gender,
+                symptoms: booking.symptoms,
+                bookingTime: booking.bookingTime,
+                status: booking.status,
+                hasSession: session.length > 0,
+                sessionStatus: session[0]?.status || null,
             };
         })
     );
 
-    return patientsWithSummary;
+    return bookingsWithSummary;
 }
+
+// Keep old function name for backwards compatibility
+export const getPatientsList = getBookingsList;

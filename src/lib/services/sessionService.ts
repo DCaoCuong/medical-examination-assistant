@@ -1,20 +1,22 @@
-import { db } from '../db';
+import { db, bookings } from '../db';
 import { examinationSessions, medicalRecords } from '../db/schema-session';
-import { patients } from '../db/schema-patient';
-import { eq, desc } from 'drizzle-orm';
+import { users } from '../db/schema-users';
+import { eq, desc, sql, and } from 'drizzle-orm';
 import { updateVisit, type MedicalPayload } from '../integrations/hisClient';
 
 // ============= Types =============
 
 export interface SessionInput {
-    patientId: string; // Required - link to patient
+    patientId?: string; // Legacy - link to users table
+    bookingId?: string; // NEW - link to bookings table (preferred)
     chiefComplaint?: string; // Reason for this visit
     visitId?: string; // Optional, from HIS system
 }
 
 export interface Session {
     id: string;
-    patientId: string;
+    patientId: string | null;
+    bookingId: string | null;
     visitNumber: number;
     chiefComplaint: string | null;
     visitId: string | null;
@@ -32,6 +34,18 @@ export interface SessionWithPatient extends Session {
         gender: string | null;
         phoneNumber: string | null;
         medicalHistory: string | null;
+    };
+}
+
+export interface SessionWithBooking extends Session {
+    booking: {
+        id: string;
+        displayId: string | null;
+        patientName: string;
+        patientPhone: string;
+        age: number | null;
+        gender: string | null;
+        symptoms: string | null;
     };
 }
 
@@ -61,38 +75,80 @@ export interface MedicalRecord {
 // ============= Session Management =============
 
 /**
- * Create a new examination session for an existing patient
+ * Create a new examination session for a booking
+ * This is the primary method for creating sessions from Booking Clinic
  */
-export async function createSession(input: SessionInput): Promise<Session> {
-    // Generate unique session ID
-    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-
-    // Get visit number for this patient
-    const existingSessions = await db
-        .select()
+export async function createSessionFromBooking(bookingId: string, chiefComplaint?: string): Promise<Session> {
+    // Get visit number for this booking
+    const countResult = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
         .from(examinationSessions)
-        .where(eq(examinationSessions.patientId, input.patientId));
+        .where(eq(examinationSessions.bookingId, bookingId));
 
-    const visitNumber = existingSessions.length + 1;
-
-    const now = new Date();
+    const visitNumber = (countResult[0]?.count || 0) + 1;
 
     // Prepare session data
     const sessionData = {
-        id: sessionId,
+        bookingId,
+        patientId: null, // Not using patient_id for booking-based sessions
+        visitNumber,
+        chiefComplaint: chiefComplaint || null,
+        visitId: null,
+        status: 'active' as const,
+        appointmentId: null,
+    };
+
+    // Insert into database and return
+    const result = await db.insert(examinationSessions).values(sessionData).returning();
+
+    const session = result[0];
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
+}
+
+/**
+ * Create a new examination session for an existing patient (Legacy)
+ */
+export async function createSession(input: SessionInput): Promise<Session> {
+    // If bookingId is provided, use the new method
+    if (input.bookingId) {
+        return createSessionFromBooking(input.bookingId, input.chiefComplaint);
+    }
+
+    // Legacy: Use patientId (for backwards compatibility)
+    if (!input.patientId) {
+        throw new Error('Either patientId or bookingId is required');
+    }
+
+    // Get visit number for this patient using count
+    const countResult = await db
+        .select({ count: sql<number>`cast(count(*) as integer)` })
+        .from(examinationSessions)
+        .where(eq(examinationSessions.patientId, input.patientId));
+
+    const visitNumber = (countResult[0]?.count || 0) + 1;
+
+    // Prepare session data (PostgreSQL will handle timestamps)
+    const sessionData = {
         patientId: input.patientId,
+        bookingId: null,
         visitNumber,
         chiefComplaint: input.chiefComplaint || null,
         visitId: input.visitId || null,
         status: 'active' as const,
-        createdAt: now,
-        updatedAt: now,
+        appointmentId: null,
     };
 
-    // Insert into database
-    await db.insert(examinationSessions).values(sessionData);
+    // Insert into database and return
+    const result = await db.insert(examinationSessions).values(sessionData).returning();
 
-    return sessionData;
+    const session = result[0];
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
 }
 
 /**
@@ -105,20 +161,70 @@ export async function getSession(sessionId: string): Promise<Session | null> {
         .where(eq(examinationSessions.id, sessionId))
         .limit(1);
 
-    return results[0] || null;
+    const session = results[0];
+    if (!session) return null;
+
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled'
+    } as Session;
 }
 
 /**
- * Get session with patient info
+ * Get session with booking info (NEW - for booking-based workflow)
+ */
+export async function getSessionWithBooking(sessionId: string): Promise<SessionWithBooking | null> {
+    const results = await db
+        .select({
+            session: examinationSessions,
+            booking: bookings
+        })
+        .from(examinationSessions)
+        .leftJoin(bookings, eq(examinationSessions.bookingId, bookings.id))
+        .where(eq(examinationSessions.id, sessionId))
+        .limit(1);
+
+    if (!results[0]) return null;
+
+    const { session, booking } = results[0];
+
+    return {
+        ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled',
+        booking: booking ? {
+            id: booking.id,
+            displayId: booking.displayId,
+            patientName: booking.patientName,
+            patientPhone: booking.patientPhone,
+            age: booking.age,
+            gender: booking.gender,
+            symptoms: booking.symptoms,
+        } : {
+            id: '',
+            displayId: null,
+            patientName: 'Unknown',
+            patientPhone: '',
+            age: null,
+            gender: null,
+            symptoms: null,
+        }
+    };
+}
+
+/**
+ * Get session with patient info (Legacy - for patient-based workflow)
  */
 export async function getSessionWithPatient(sessionId: string): Promise<SessionWithPatient | null> {
     const results = await db
         .select({
             session: examinationSessions,
-            patient: patients
+            patient: users
         })
         .from(examinationSessions)
-        .leftJoin(patients, eq(examinationSessions.patientId, patients.id))
+        .leftJoin(users, and(
+            eq(examinationSessions.patientId, users.id),
+            eq(users.role, 'patient')
+        ))
         .where(eq(examinationSessions.id, sessionId))
         .limit(1);
 
@@ -128,13 +234,14 @@ export async function getSessionWithPatient(sessionId: string): Promise<SessionW
 
     return {
         ...session,
+        status: session.status as 'active' | 'completed' | 'cancelled',
         patient: patient ? {
             id: patient.id,
-            displayId: patient.displayId,
+            displayId: patient.displayId || 'N/A',
             name: patient.name,
-            birthDate: patient.birthDate,
+            birthDate: patient.birthDate || null,
             gender: patient.gender,
-            phoneNumber: patient.phoneNumber,
+            phoneNumber: patient.phone,
             medicalHistory: patient.medicalHistory
         } : {
             id: '',
@@ -211,25 +318,23 @@ export async function saveMedicalRecord(input: MedicalRecordInput): Promise<Medi
 
         return record;
     } else {
-        // Create new record
-        const recordId = `rec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        // Create new record (PostgreSQL will auto-generate UUID)
 
         const recordData = {
-            id: recordId,
             sessionId: input.sessionId,
             subjective: input.subjective || null,
             objective: input.objective || null,
             assessment: input.assessment || null,
             plan: input.plan || null,
             icdCodes: input.icdCodes || [],
+            diagnosis: input.assessment || null, // Duplicate for Booking compatibility
+            prescription: input.plan || null, // Duplicate for Booking compatibility
             status: input.status,
-            createdAt: now,
-            updatedAt: now,
         };
 
-        await db.insert(medicalRecords).values(recordData);
+        const result = await db.insert(medicalRecords).values(recordData).returning();
 
-        const record = recordData as MedicalRecord;
+        const record = result[0] as MedicalRecord;
 
         // If status is final, sync to HIS and update session
         if (input.status === 'final') {
