@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Tabs, Textarea, type TabItem } from './ui';
 import { Sparkles, Save, Lightbulb, BookOpen, ChevronRight, AlertCircle } from 'lucide-react';
+import ICD10Picker from './ICD10Picker';
 
 // Helper: Parse markdown table to structured data
 interface TableData {
@@ -70,7 +71,7 @@ function AIAdviceDisplay({ advice }: { advice: string }) {
                     </div>
                     <div>
                         <h4 className="text-lg font-bold text-white">
-                            Gợi ý từ AI Medical Expert
+                            Gợi ý từ Medical Assistant
                         </h4>
                     </div>
                 </div>
@@ -100,64 +101,169 @@ function AIAdviceDisplay({ advice }: { advice: string }) {
                     </div>
                 )}
 
-                {/* Styled Table */}
+                {/* Styled Table - Redesigned as Cards for better readability */}
                 {table && (
-                    <div className="overflow-x-auto rounded-lg border border-slate-200 shadow-sm">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="bg-gradient-to-r from-slate-100 to-slate-50">
-                                    {table.headers.map((header, i) => (
-                                        <th
-                                            key={i}
-                                            className="px-4 py-3 text-left font-semibold text-slate-700 border-b border-slate-200"
-                                        >
-                                            {header}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {table.rows.map((row, rowIndex) => (
-                                    <tr
-                                        key={rowIndex}
-                                        className="hover:bg-sky-50/50 transition-colors duration-150 border-b border-slate-100 last:border-0"
-                                    >
-                                        {row.map((cell, cellIndex) => (
-                                            <td
-                                                key={cellIndex}
-                                                className="px-4 py-3 text-slate-600"
-                                            >
-                                                {/* First column (index) styling */}
-                                                {cellIndex === 0 ? (
-                                                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-sky-100 text-sky-700 font-semibold text-xs">
-                                                        {cell}
-                                                    </span>
-                                                ) : (
-                                                    <div className="flex items-start gap-2">
-                                                        {/* Add icon for recommendation column */}
-                                                        {cellIndex === 1 && (
-                                                            <ChevronRight className="w-4 h-4 text-teal-500 mt-0.5 flex-shrink-0" />
-                                                        )}
-                                                        {/* Add book icon for citation column */}
-                                                        {cellIndex === 2 && cell && (
-                                                            <BookOpen className="w-4 h-4 text-amber-500 mt-0.5 flex-shrink-0" />
-                                                        )}
-                                                        <span className={cellIndex === 1 ? "font-medium text-slate-700" : "text-slate-500 italic"}>
-                                                            {cell.split('<br>').map((part, i) => (
-                                                                <span key={i}>
-                                                                    {part}
-                                                                    {i < cell.split('<br>').length - 1 && <br />}
-                                                                </span>
-                                                            ))}
-                                                        </span>
-                                                    </div>
-                                                )}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                    <div className="space-y-3">
+                        {table.rows.map((row, rowIndex) => {
+                            // Determine structure: some tables have [number, content], others have [title, content]
+                            let cardNumber = rowIndex + 1;
+                            let cardTitle = '';
+                            let cardContent = '';
+                            let reference = '';
+
+                            if (row.length >= 2) {
+                                const firstCol = (row[0] || '').trim();
+                                const secondCol = (row[1] || '').trim();
+                                reference = row[2] || '';
+
+                                // Check if first column is just a number
+                                const isFirstColNumber = /^\d+\.?$/.test(firstCol.replace(/\*\*/g, ''));
+
+                                if (isFirstColNumber) {
+                                    // Structure: [number, content with title]
+                                    cardNumber = parseInt(firstCol.replace(/\D/g, '')) || rowIndex + 1;
+
+                                    // Extract title from content (usually first line or bold text)
+                                    const lines = secondCol.split(/[\n<br>]/);
+                                    const firstLine = lines[0]?.trim() || '';
+
+                                    // If first line looks like a title (short, possibly bold)
+                                    if (firstLine.length < 100 && !firstLine.includes('.')) {
+                                        cardTitle = firstLine.replace(/\*\*/g, '').trim();
+                                        cardContent = lines.slice(1).join('\n').trim();
+                                    } else {
+                                        // Try to extract title from bold text at start
+                                        const boldMatch = secondCol.match(/^\*\*(.*?)\*\*/);
+                                        if (boldMatch) {
+                                            cardTitle = boldMatch[1].trim();
+                                            cardContent = secondCol.replace(/^\*\*(.*?)\*\*/, '').trim();
+                                        } else {
+                                            cardTitle = `Mục ${cardNumber}`;
+                                            cardContent = secondCol;
+                                        }
+                                    }
+                                } else {
+                                    // Structure: [title, content]
+                                    cardTitle = firstCol
+                                        .replace(/\*\*/g, '')
+                                        .replace(/^\s*\d+\.\s*/, '')
+                                        .trim();
+                                    cardContent = secondCol;
+                                }
+                            } else if (row.length === 1) {
+                                // Single column - treat as content
+                                cardContent = row[0] || '';
+                                cardTitle = `Mục ${cardNumber}`;
+                            }
+
+                            // Parse content with markdown formatting
+                            const parseContent = (text: string) => {
+                                if (!text) return null;
+
+                                // Replace <br> tags with newlines
+                                let normalizedText = text.replace(/<br\s*\/?>/gi, '\n');
+
+                                // Split on dash items like "- item 1. - item 2."
+                                normalizedText = normalizedText.replace(/\.\s*-\s*/g, '.\n- ');
+
+                                // Split numbered items like "1. xxx 2. yyy"
+                                normalizedText = normalizedText.replace(/(?<=[^\n])\s*(\d+\.\s)/g, '\n$1');
+
+                                // Clean up
+                                normalizedText = normalizedText.replace(/\n+/g, '\n').trim();
+
+                                return normalizedText.split('\n').map((line, i) => {
+                                    const trimmedLine = line.trim();
+                                    if (!trimmedLine) return null;
+
+                                    // Handle numbered items
+                                    const numberedMatch = trimmedLine.match(/^(\d+)\.\s*(.*)$/);
+                                    if (numberedMatch) {
+                                        const [, num, text] = numberedMatch;
+                                        return (
+                                            <div key={i} className="flex items-start gap-2 py-1">
+                                                <span className="w-5 h-5 rounded-full bg-teal-100 text-teal-700 text-xs font-bold flex items-center justify-center flex-shrink-0 mt-0.5">
+                                                    {num}
+                                                </span>
+                                                <span className="text-slate-700">{parseBoldText(text)}</span>
+                                            </div>
+                                        );
+                                    }
+
+                                    // Handle bullet items
+                                    if (trimmedLine.startsWith('-') || trimmedLine.startsWith('•')) {
+                                        return (
+                                            <div key={i} className="flex items-start gap-2 ml-2 py-0.5">
+                                                <span className="text-teal-600 mt-1">•</span>
+                                                <span>{parseBoldText(trimmedLine.replace(/^[-•]\s*/, ''))}</span>
+                                            </div>
+                                        );
+                                    }
+
+                                    // Handle bold text
+                                    if (trimmedLine.includes('**')) {
+                                        return <span key={i}>{parseBoldText(trimmedLine)}<br /></span>;
+                                    }
+
+                                    return <span key={i}>{trimmedLine}<br /></span>;
+                                }).filter(Boolean);
+                            };
+
+                            // Helper to parse bold text
+                            const parseBoldText = (str: string) => {
+                                if (!str.includes('**')) return str;
+                                const parts = str.split(/\*\*(.*?)\*\*/g);
+                                return parts.map((part, j) =>
+                                    j % 2 === 1
+                                        ? <strong key={j} className="text-slate-800">{part}</strong>
+                                        : part
+                                );
+                            };
+
+                            // Color themes
+                            const colorThemes = [
+                                { bg: 'bg-blue-50', border: 'border-blue-200', accent: 'text-blue-700', icon: 'bg-blue-100' },
+                                { bg: 'bg-rose-50', border: 'border-rose-200', accent: 'text-rose-700', icon: 'bg-rose-100' },
+                                { bg: 'bg-emerald-50', border: 'border-emerald-200', accent: 'text-emerald-700', icon: 'bg-emerald-100' },
+                                { bg: 'bg-amber-50', border: 'border-amber-200', accent: 'text-amber-700', icon: 'bg-amber-100' },
+                                { bg: 'bg-purple-50', border: 'border-purple-200', accent: 'text-purple-700', icon: 'bg-purple-100' },
+                                { bg: 'bg-cyan-50', border: 'border-cyan-200', accent: 'text-cyan-700', icon: 'bg-cyan-100' },
+                                { bg: 'bg-orange-50', border: 'border-orange-200', accent: 'text-orange-700', icon: 'bg-orange-100' },
+                            ];
+                            const theme = colorThemes[(cardNumber - 1) % colorThemes.length];
+
+                            return (
+                                <div
+                                    key={rowIndex}
+                                    className={`rounded-xl border-2 ${theme.border} ${theme.bg} overflow-hidden transition-all hover:shadow-md`}
+                                >
+                                    {/* Card Header */}
+                                    <div className={`px-4 py-3 border-b ${theme.border} flex items-center gap-3`}>
+                                        <div className={`w-8 h-8 rounded-lg ${theme.icon} flex items-center justify-center font-bold ${theme.accent} text-sm`}>
+                                            {cardNumber}
+                                        </div>
+                                        <h5 className={`font-bold ${theme.accent} text-base`}>
+                                            {cardTitle}
+                                        </h5>
+                                    </div>
+
+                                    {/* Card Content */}
+                                    <div className="px-4 py-3 bg-white/60">
+                                        <div className="text-slate-700 text-sm leading-relaxed">
+                                            {parseContent(cardContent)}
+                                        </div>
+
+                                        {/* Reference if exists */}
+                                        {reference && (
+                                            <div className="mt-3 pt-3 border-t border-slate-100 flex items-start gap-2">
+                                                <BookOpen className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                                                <span className="text-xs text-slate-500 italic">{reference}</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 
@@ -193,6 +299,8 @@ interface MedicalRecordReviewProps {
     aiResults: AIResults;
     onSave: (data: MedicalRecordData, isFinal: boolean) => void;
     onComparison?: () => void;
+    readOnly?: boolean;  // If true, show read-only view with "Tiếp theo" button
+    onProceed?: () => void;  // Callback when "Tiếp theo" is clicked
 }
 
 export interface MedicalRecordData {
@@ -208,13 +316,29 @@ export default function MedicalRecordReview({
     aiResults,
     onSave,
     onComparison,
+    readOnly = false,
+    onProceed,
 }: MedicalRecordReviewProps) {
-    // Initialize form data from AI results
+    // Helper: Format text with numbered items and dashes to have proper line breaks
+    const formatNumberedList = (text: string): string => {
+        if (!text) return '';
+        // Replace <br> tags with newlines
+        let formatted = text.replace(/<br\s*\/?>/gi, '\n');
+        // Add newline before dash items like "- item"
+        formatted = formatted.replace(/\.\s*-\s+/g, '.\n- ');
+        // Add newline before numbered items (but not at the start)
+        formatted = formatted.replace(/(?<!^)(\d+\.\s)/gm, '\n$1');
+        // Clean up multiple newlines
+        formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
+        return formatted;
+    };
+
+    // Initialize form data from AI results with formatted text
     const [formData, setFormData] = useState<MedicalRecordData>({
-        subjective: aiResults.soap.subjective || '',
-        objective: aiResults.soap.objective || '',
-        assessment: aiResults.soap.assessment || '',
-        plan: aiResults.soap.plan || '',
+        subjective: formatNumberedList(aiResults.soap.subjective || ''),
+        objective: formatNumberedList(aiResults.soap.objective || ''),
+        assessment: formatNumberedList(aiResults.soap.assessment || ''),
+        plan: formatNumberedList(aiResults.soap.plan || ''),
         icdCodes: aiResults.icdCodes?.map(item => item.code) || [],
     });
 
@@ -229,17 +353,10 @@ export default function MedicalRecordReview({
         setFormData(prev => ({ ...prev, [field]: value }));
     };
 
-    // Toggle ICD code selection
-    const toggleIcdCode = (code: string) => {
-        setSelectedIcdCodes(prev => {
-            const newCodes = prev.includes(code)
-                ? prev.filter(c => c !== code)
-                : [...prev, code];
-
-            // Update form data
-            setFormData(prevData => ({ ...prevData, icdCodes: newCodes }));
-            return newCodes;
-        });
+    // Handle ICD code selection change from picker
+    const handleIcdCodesChange = (codes: string[]) => {
+        setSelectedIcdCodes(codes);
+        setFormData(prev => ({ ...prev, icdCodes: codes }));
     };
 
     // Magic Fill: Accept all AI suggestions
@@ -371,6 +488,8 @@ export default function MedicalRecordReview({
                         onChange={(e) => handleFieldChange('subjective', e.target.value)}
                         rows={5}
                         helperText="Ghi lại lời kể của bệnh nhân về các triệu chứng, cảm giác khó chịu"
+                        readOnly={readOnly}
+                        className={readOnly ? 'bg-slate-50 cursor-not-allowed' : ''}
                     />
 
                     <Textarea
@@ -380,6 +499,8 @@ export default function MedicalRecordReview({
                         onChange={(e) => handleFieldChange('objective', e.target.value)}
                         rows={5}
                         helperText="Ghi nhận các sinh hiệu và kết quả khám lâm sàng khách quan"
+                        readOnly={readOnly}
+                        className={readOnly ? 'bg-slate-50 cursor-not-allowed' : ''}
                     />
                 </div>
             ),
@@ -401,57 +522,45 @@ export default function MedicalRecordReview({
                         onChange={(e) => handleFieldChange('assessment', e.target.value)}
                         rows={4}
                         helperText="Chẩn đoán chính xác dựa trên triệu chứng và khám lâm sàng"
-                        error={!formData.assessment ? 'Chẩn đoán là bắt buộc' : undefined}
+                        error={!readOnly && !formData.assessment ? 'Chẩn đoán là bắt buộc' : undefined}
+                        readOnly={readOnly}
+                        className={readOnly ? 'bg-slate-50 cursor-not-allowed' : ''}
                     />
 
-                    {/* ICD-10 Code Picker */}
+                    {/* ICD-10 Code Display or Picker */}
                     <div>
                         <label className="block mb-3 text-sm font-semibold text-slate-700">
                             Mã ICD-10
-                            {selectedIcdCodes.length === 0 && (
+                            {!readOnly && selectedIcdCodes.length === 0 && (
                                 <span className="ml-2 text-red-600 text-xs">* Bắt buộc</span>
                             )}
                         </label>
 
-                        <div className="space-y-2">
-                            {aiResults.icdCodes && aiResults.icdCodes.length > 0 ? (
-                                aiResults.icdCodes.map((item) => (
-                                    <label
-                                        key={item.code}
-                                        className={`
-                      flex items-start gap-3 p-4 border-2 rounded-lg cursor-pointer
-                      transition-all duration-200
-                      ${selectedIcdCodes.includes(item.code)
-                                                ? 'border-sky-500 bg-sky-50'
-                                                : 'border-slate-200 hover:border-slate-300'
-                                            }
-                    `}
-                                    >
-                                        <input
-                                            type="checkbox"
-                                            checked={selectedIcdCodes.includes(item.code)}
-                                            onChange={() => toggleIcdCode(item.code)}
-                                            className="mt-1 w-4 h-4 text-sky-600 rounded focus:ring-sky-500"
-                                        />
-                                        <div className="flex-1">
-                                            <span className="font-mono font-semibold text-sky-600">
-                                                {item.code}
-                                            </span>
-                                            <span className="ml-2 text-slate-700">
-                                                {item.description}
-                                            </span>
-                                        </div>
-                                    </label>
-                                ))
-                            ) : (
-                                <p className="text-slate-500 text-sm">Không có mã ICD-10 được đề xuất</p>
-                            )}
-                        </div>
-
-                        {selectedIcdCodes.length > 0 && (
-                            <p className="mt-2 text-sm text-slate-600">
-                                Đã chọn: <span className="font-semibold">{selectedIcdCodes.length}</span> mã
-                            </p>
+                        {readOnly ? (
+                            // Read-only: just display the codes
+                            <div className="flex flex-wrap gap-2">
+                                {selectedIcdCodes.map((code) => {
+                                    const codeInfo = aiResults.icdCodes?.find(c => c.code === code);
+                                    return (
+                                        <span
+                                            key={code}
+                                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-sky-100 text-sky-800 rounded-full text-sm border border-sky-200"
+                                        >
+                                            <span className="font-mono font-semibold">{code}</span>
+                                            {codeInfo?.description && (
+                                                <span className="text-sky-600">{codeInfo.description}</span>
+                                            )}
+                                        </span>
+                                    );
+                                })}
+                            </div>
+                        ) : (
+                            <ICD10Picker
+                                selectedCodes={selectedIcdCodes}
+                                suggestedCodes={aiResults.icdCodes}
+                                onChange={handleIcdCodesChange}
+                                maxSelections={10}
+                            />
                         )}
                     </div>
                 </div>
@@ -474,6 +583,8 @@ export default function MedicalRecordReview({
                         onChange={(e) => handleFieldChange('plan', e.target.value)}
                         rows={6}
                         helperText="Chi tiết về thuốc, liều dùng, tái khám và lời khuyên cho bệnh nhân"
+                        readOnly={readOnly}
+                        className={readOnly ? 'bg-slate-50 cursor-not-allowed' : ''}
                     />
 
                     {/* AI Medical Advice (Read-only) - Enhanced Display */}
@@ -487,32 +598,11 @@ export default function MedicalRecordReview({
 
     return (
         <Card className="mt-6">
-            <div className="p-6 border-b border-slate-200">
-                <div className="flex items-start justify-between">
-                    <div>
-                        <h2 className="text-2xl font-bold text-slate-900 mb-2">
-                            Xét duyệt & Chỉnh sửa bệnh án
-                        </h2>
-                        <p className="text-slate-600">
-                            Xem lại kết quả AI và chỉnh sửa nếu cần trước khi lưu bệnh án chính thức
-                        </p>
-                    </div>
-                    {/* <Button
-                        variant="secondary"
-                        onClick={handleMagicFill}
-                        className="flex items-center gap-2 px-4 py-2"
-                    >
-                        <Sparkles className="w-4 h-4" />
-                        Phê duyệt nhanh AI
-                    </Button> */}
-                </div>
-            </div>
-
             {/* Tabs for SOAP sections */}
             <Tabs tabs={tabs} defaultTab="examination" />
 
-            {/* Save Message */}
-            {saveMessage && (
+            {/* Save Message (only in edit mode) */}
+            {!readOnly && saveMessage && (
                 <div className={`mx-6 mb-4 p-4 rounded-lg ${saveMessage.type === 'success'
                     ? 'bg-green-50 border border-green-200'
                     : 'bg-red-50 border border-red-200'
@@ -534,40 +624,57 @@ export default function MedicalRecordReview({
             )}
 
             {/* Action Buttons */}
-            <div className="flex justify-between items-center gap-4 px-6 pb-6">
-                <Button
-                    variant="secondary"
-                    onClick={handleSaveDraft}
-                    disabled={isSaving}
-                    className="px-6 py-3"
-                >
-                    {isSaving ? 'Đang lưu...' : 'Lưu nháp'}
-                </Button>
+            <div className="flex justify-end items-center gap-4 px-6 pb-6">
+                {readOnly ? (
+                    /* Read-only mode: "Tiếp theo" button */
+                    <Button
+                        variant="primary"
+                        onClick={onProceed}
+                        className="px-8 py-3 text-lg font-semibold flex items-center gap-2"
+                    >
+                        Tiếp theo
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                        </svg>
+                    </Button>
+                ) : (
+                    /* Edit mode: Save buttons */
+                    <>
+                        <Button
+                            variant="secondary"
+                            onClick={handleSaveDraft}
+                            disabled={isSaving}
+                            className="px-6 py-3"
+                        >
+                            {isSaving ? 'Đang lưu...' : 'Lưu nháp'}
+                        </Button>
 
-                <Button
-                    variant="primary"
-                    onClick={handleFinalSave}
-                    disabled={isSaving || !formData.assessment || formData.icdCodes.length === 0}
-                    className="px-8 py-3 text-lg font-semibold relative"
-                >
-                    {isSaving ? (
-                        <span className="flex items-center gap-2">
-                            <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            Đang lưu...
-                        </span>
-                    ) : (
-                        <>
-                            <Save className="w-5 h-5 inline mr-2" />
-                            Lưu bệnh án (Final)
-                            <span className="ml-3 text-xs bg-white/20 px-2 py-1 rounded font-mono">
-                                Ctrl+Enter
-                            </span>
-                        </>
-                    )}
-                </Button>
+                        <Button
+                            variant="primary"
+                            onClick={handleFinalSave}
+                            disabled={isSaving || !formData.assessment || formData.icdCodes.length === 0}
+                            className="px-8 py-3 text-lg font-semibold relative"
+                        >
+                            {isSaving ? (
+                                <span className="flex items-center gap-2">
+                                    <svg className="animate-spin h-5 w-5" fill="none" viewBox="0 0 24 24">
+                                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                    </svg>
+                                    Đang lưu...
+                                </span>
+                            ) : (
+                                <>
+                                    <Save className="w-5 h-5 inline mr-2" />
+                                    Lưu bệnh án (Final)
+                                    <span className="ml-3 text-xs bg-white/20 px-2 py-1 rounded font-mono">
+                                        Ctrl+Enter
+                                    </span>
+                                </>
+                            )}
+                        </Button>
+                    </>
+                )}
             </div>
         </Card>
     );

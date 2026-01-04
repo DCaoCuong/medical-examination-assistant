@@ -92,7 +92,7 @@ export async function expertNode(state: AgentState): Promise<Partial<AgentState>
     const references = docs.map((d: Document) => (d.metadata.source || "Unknown Source").replace(".md", ""));
 
     // 3. Ask LLM with Context
-    const prompt = `Bạn là chuyên gia y tế cố vấn.
+    const prompt = `Bạn là chuyên gia y tế cố vấn. TẤT CẢ PHẢN HỒI PHẢI BẰNG TIẾNG VIỆT.
 Dựa vào Y VĂN ĐƯỢC CUNG CẤP dưới đây, hãy đưa ra nhận xét và gợi ý điều trị.
 
 Y VĂN (Context):
@@ -102,12 +102,19 @@ BỆNH ÁN (SOAP):
 S: ${state.soap.subjective}
 O: ${state.soap.objective}
 A: ${state.soap.assessment}
+P (hiện tại): ${state.soap.plan}
 
-YÊU CẦU:
-- Đưa ra lời khuyên ngắn gọn cho bác sĩ.
-- Cảnh báo nếu phác đồ hiện tại (Plan) có gì sai sót so với Y VĂN.
-- Gợi ý xét nghiệm cần làm thêm.
-- TRÍCH DẪN từ y văn (nếu có).`;
+YÊU CẦU (PHẢI TRẢ LỜI BẰNG TIẾNG VIỆT):
+- Đưa ra lời khuyên ngắn gọn cho bác sĩ điều trị.
+- Cảnh báo nếu phác đồ hiện tại (Plan) có gì sai sót hoặc không phù hợp so với Y VĂN.
+- Gợi ý xét nghiệm/chẩn đoán hình ảnh cần làm thêm (nếu cần).
+- Gợi ý điều trị và quản lý bệnh nhân.
+- Khi nào cần can thiệp chuyên khoa.
+- TRÍCH DẪN từ y văn (nếu có).
+
+LƯU Ý QUAN TRỌNG: 
+- KHÔNG dùng tiếng Anh. 
+- Tất cả tiêu đề, nội dung phải hoàn toàn bằng TIẾNG VIỆT.`;
 
     const completion = await groq.chat.completions.create({
         messages: [{ role: "user", content: prompt }],

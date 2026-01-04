@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { X } from 'lucide-react';
 import Button from './ui/Button';
+import { useToast } from './ui';
 
 interface PatientFormData {
     name: string;
@@ -28,6 +29,7 @@ export default function PatientFormModal({ onClose, onPatientCreated }: PatientF
     const [showDuplicateWarning, setShowDuplicateWarning] = useState(false);
 
     const { register, handleSubmit, formState: { errors }, reset } = useForm<PatientFormData>();
+    const toast = useToast();
 
     const onSubmit = async (data: PatientFormData, force: boolean = false) => {
         setLoading(true);
@@ -53,11 +55,11 @@ export default function PatientFormModal({ onClose, onPatientCreated }: PatientF
                 setDuplicates(result.duplicates || []);
                 setShowDuplicateWarning(true);
             } else {
-                alert('Lỗi: ' + result.error);
+                toast.error('Lỗi: ' + result.error);
             }
         } catch (error) {
             console.error('Error creating patient:', error);
-            alert('Không thể tạo bệnh nhân. Vui lòng thử lại.');
+            toast.error('Không thể tạo bệnh nhân. Vui lòng thử lại.');
         } finally {
             setLoading(false);
         }
