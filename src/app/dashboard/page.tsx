@@ -5,9 +5,11 @@ import { useRouter } from 'next/navigation';
 import Card from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import Button from '@/components/ui/Button';
+import { useToast } from '@/components/ui';
 import PatientSearchModal from '@/components/PatientSearchModal';
 import PatientFormModal from '@/components/PatientFormModal';
-import { Search, UserPlus, TrendingUp, Users, Calendar, Activity, Stethoscope, Trash2, Phone, Clock } from 'lucide-react';
+import UrgencyBadge, { getRowUrgencyClass } from '@/components/UrgencyBadge';
+import { Search, UserPlus, TrendingUp, Users, Calendar, Activity, Stethoscope, Trash2, Phone, Clock, FileText } from 'lucide-react';
 
 interface DashboardStats {
     today: {
@@ -51,6 +53,7 @@ export default function DashboardPage() {
     const [showPatientSearch, setShowPatientSearch] = useState(false);
     const [showPatientForm, setShowPatientForm] = useState(false);
     const [deletingBookingId, setDeletingBookingId] = useState<string | null>(null);
+    const toast = useToast();
 
     useEffect(() => {
         fetchDashboardData();
@@ -101,9 +104,15 @@ export default function DashboardPage() {
         router.push(`/examination?bookingId=${patientId}`);
     };
 
-    const handleQuickExam = (bookingId: string, e: React.MouseEvent) => {
+    const handleQuickExam = (bookingId: string, sessionStatus: string | null, e: React.MouseEvent) => {
         e.stopPropagation();
-        router.push(`/examination?bookingId=${bookingId}`);
+        if (sessionStatus === 'completed') {
+            // Booking đã hoàn thành → xem bệnh án
+            router.push(`/booking/${bookingId}/record`);
+        } else {
+            // Booking chưa hoàn thành → khám bệnh
+            router.push(`/examination?bookingId=${bookingId}`);
+        }
     };
 
     const handleDeleteBooking = async (bookingId: string, displayId: string | null, e: React.MouseEvent) => {
@@ -124,20 +133,26 @@ export default function DashboardPage() {
 
             if (data.success) {
                 fetchDashboardData();
-                alert('Xóa lịch khám thành công!');
+                toast.success('Xóa lịch khám thành công!');
             } else {
-                alert('Lỗi: ' + data.message);
+                toast.error('Lỗi: ' + data.message);
             }
         } catch (error) {
             console.error('Error deleting booking:', error);
-            alert('Lỗi kết nối. Vui lòng thử lại.');
+            toast.error('Lỗi kết nối. Vui lòng thử lại.');
         } finally {
             setDeletingBookingId(null);
         }
     };
 
-    const handleRowClick = (bookingId: string) => {
-        router.push(`/examination?bookingId=${bookingId}`);
+    const handleRowClick = (bookingId: string, sessionStatus: string | null) => {
+        if (sessionStatus === 'completed') {
+            // Booking đã hoàn thành → xem bệnh án
+            router.push(`/booking/${bookingId}/record`);
+        } else {
+            // Booking chưa hoàn thành → khám bệnh
+            router.push(`/examination?bookingId=${bookingId}`);
+        }
     };
 
     if (loading) {
@@ -168,7 +183,7 @@ export default function DashboardPage() {
                         </Button>
                         <Button variant="primary" onClick={handleNewPatient} className="flex items-center gap-2">
                             <UserPlus className="w-5 h-5" />
-                            Đặt lịch mới
+                            Bệnh nhân    mới
                         </Button>
                     </div>
                 </div>
@@ -199,21 +214,21 @@ export default function DashboardPage() {
                             <table className="w-full">
                                 <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Mã lịch</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tên bệnh nhân</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tuổi/Giới tính</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">SĐT</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Thời gian đặt</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Trạng thái</th>
-                                        <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Thao tác</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Mã lịch</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Tên bệnh nhân</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Tuổi/Giới tính</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">SĐT</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Thời gian đặt</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Trạng thái</th>
+                                        <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700 whitespace-nowrap">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     {bookings.map((booking, idx) => (
                                         <tr
                                             key={booking.id}
-                                            className="border-b border-slate-100 hover:bg-sky-50/50 transition cursor-pointer"
-                                            onClick={() => handleRowClick(booking.id)}
+                                            className={`border-b border-slate-100 transition cursor-pointer ${getRowUrgencyClass(booking.bookingTime, booking.hasSession, booking.sessionStatus)}`}
+                                            onClick={() => handleRowClick(booking.id, booking.sessionStatus)}
                                             style={{ animationDelay: `${idx * 50}ms` }}
                                         >
                                             <td className="px-6 py-4">
@@ -254,12 +269,21 @@ export default function DashboardPage() {
                                                 <div className="flex items-center gap-2 justify-center">
                                                     <Button
                                                         variant="primary"
-                                                        onClick={(e) => handleQuickExam(booking.id, e)}
+                                                        onClick={(e) => handleQuickExam(booking.id, booking.sessionStatus, e)}
                                                         className="px-3 py-2 text-xs flex items-center gap-1"
-                                                        title="Bắt đầu khám"
+                                                        title={booking.sessionStatus === 'completed' ? 'Xem bệnh án' : 'Bắt đầu khám'}
                                                     >
-                                                        <Stethoscope className="w-4 h-4" />
-                                                        Khám
+                                                        {booking.sessionStatus === 'completed' ? (
+                                                            <>
+                                                                <FileText className="w-4 h-4" />
+                                                                Xem
+                                                            </>
+                                                        ) : (
+                                                            <>
+                                                                <Stethoscope className="w-4 h-4" />
+                                                                Khám
+                                                            </>
+                                                        )}
                                                     </Button>
                                                     <Button
                                                         variant="danger"

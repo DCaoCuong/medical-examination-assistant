@@ -3,8 +3,10 @@
 import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { SoapNote, ComparisonResult } from '@/lib/agents/comparison';
-import { ArrowRight, Check, AlertTriangle, FileText, Activity, Calculator, Clipboard, PillBottle, Target } from 'lucide-react';
+import { ArrowRight, Check, AlertTriangle, FileText, Activity, Calculator, Clipboard, PillBottle, Target, Save } from 'lucide-react';
 import clsx from 'clsx';
+import { useToast } from './ui';
+import ICD10Picker from './ICD10Picker';
 
 interface MatchingEngineProps {
     sessionId: string;
@@ -26,17 +28,78 @@ interface DoctorInputForm {
 export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiIcd, medicalAdvice }: MatchingEngineProps) {
     const [mode, setMode] = useState<'input' | 'analyzing' | 'result'>('input');
     const [comparison, setComparison] = useState<ComparisonResult | null>(null);
+    const [isSaved, setIsSaved] = useState(false);  // Track if medical record is saved
+    const [isSaving, setIsSaving] = useState(false);
+    const toast = useToast();
 
-    const { register, handleSubmit } = useForm<DoctorInputForm>({
+    // Helper: Format text with numbered items to have proper line breaks
+    const formatNumberedList = (text: string): string => {
+        if (!text) return '';
+        // Replace <br> tags with newlines
+        let formatted = text.replace(/<br\s*\/?>/gi, '\n');
+        // Add newline before numbered items (but not at the start)
+        formatted = formatted.replace(/(?<!^)(\d+\.\s)/gm, '\n$1');
+        // Clean up multiple newlines
+        formatted = formatted.replace(/\n{3,}/g, '\n\n').trim();
+        return formatted;
+    };
+
+    // ICD-10 codes state for the picker
+    const [selectedIcdCodes, setSelectedIcdCodes] = useState<string[]>(
+        aiIcd.map(code => code.split(' - ')[0]) // Extract just the code part
+    );
+
+    const { register, handleSubmit, getValues } = useForm<DoctorInputForm>({
         defaultValues: {
-            subjective: aiSoap.subjective,
-            objective: aiSoap.objective,
-            assessment: aiSoap.assessment,
-            plan: aiSoap.plan,
+            subjective: formatNumberedList(aiSoap.subjective),
+            objective: formatNumberedList(aiSoap.objective),
+            assessment: formatNumberedList(aiSoap.assessment),
+            plan: formatNumberedList(aiSoap.plan),
             icdCodes: aiIcd.join(', '),
             notes: ''
         }
     });
+
+    // Save medical record before comparison
+    const handleSaveMedicalRecord = async () => {
+        const data = getValues();
+
+        if (!data.assessment || selectedIcdCodes.length === 0) {
+            toast.error('Chẩn đoán và mã ICD-10 là bắt buộc');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const response = await fetch('/api/medical-record/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    sessionId,
+                    subjective: data.subjective,
+                    objective: data.objective,
+                    assessment: data.assessment,
+                    plan: data.plan,
+                    icdCodes: selectedIcdCodes,
+                    status: 'final',
+                }),
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                toast.success('Bệnh án đã được lưu thành công!');
+                setIsSaved(true);
+            } else {
+                toast.error('Không thể lưu bệnh án: ' + (result.message || 'Lỗi không xác định'));
+            }
+        } catch (error) {
+            console.error('Error saving medical record:', error);
+            toast.error('Lỗi kết nối. Vui lòng thử lại.');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     const onSubmit = async (data: DoctorInputForm) => {
         setMode('analyzing');
@@ -57,7 +120,7 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                         assessment: data.assessment,
                         plan: data.plan
                     },
-                    icdCodes: data.icdCodes.split(',').map(c => c.trim()).filter(c => c),
+                    icdCodes: selectedIcdCodes, // Use state instead of form field
                     treatment: { medications: [], tests: [], followUp: '' } // Simplified for MVP
                 }
             };
@@ -73,12 +136,12 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                 setComparison(result.analysis);
                 setMode('result');
             } else {
-                alert('Lỗi phân tích: ' + result.error);
+                toast.error('Lỗi phân tích: ' + result.error);
                 setMode('input');
             }
         } catch (error) {
             console.error(error);
-            alert('Không thể kết nối đến server');
+            toast.error('Không thể kết nối đến server');
             setMode('input');
         }
     };
@@ -142,16 +205,20 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                             />
                         </div>
 
-                        {/* ICD Codes */}
-                        <div className="space-y-2 border-l-4 border-l-teal-500 pl-4">
+                        {/* ICD Codes - Enhanced Picker */}
+                        <div className="space-y-3 border-l-4 border-l-teal-500 pl-4">
                             <label className="text-sm font-bold text-gray-800 flex items-center gap-2">
                                 <Target className="w-4 h-4 text-teal-600" />
-                                Mã ICD-10 (phân cách bằng dấu phẩy)
+                                Mã ICD-10 (bác sĩ chọn)
                             </label>
-                            <input
-                                {...register('icdCodes')}
-                                placeholder="Ví dụ: K29.5, B98.2, J06.9"
-                                className="w-full p-3 rounded-lg border border-gray-300 focus:ring-2 focus:ring-teal-500 focus:border-teal-500 text-sm font-mono bg-teal-50/30 transition"
+                            <ICD10Picker
+                                selectedCodes={selectedIcdCodes}
+                                suggestedCodes={aiIcd.map(code => {
+                                    const [codeNum, ...descParts] = code.split(' - ');
+                                    return { code: codeNum, description: descParts.join(' - ') || '' };
+                                })}
+                                onChange={setSelectedIcdCodes}
+                                maxSelections={10}
                             />
                         </div>
 
@@ -169,12 +236,43 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                             />
                         </div>
 
-                        <div className="pt-4 flex justify-end">
-                            <button type="submit"
-                                className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition shadow-lg flex items-center gap-2 font-bold">
-                                <Calculator className="w-5 h-5" />
-                                So sánh & Phân tích
-                            </button>
+                        <div className="pt-4 flex justify-end gap-3">
+                            {!isSaved ? (
+                                /* Step 1: Save Medical Record */
+                                <button
+                                    type="button"
+                                    onClick={handleSaveMedicalRecord}
+                                    disabled={isSaving}
+                                    className="bg-emerald-600 text-white px-6 py-3 rounded-xl hover:bg-emerald-700 transition shadow-lg flex items-center gap-2 font-bold disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSaving ? (
+                                        <>
+                                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                            Đang lưu...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Save className="w-5 h-5" />
+                                            Lưu bệnh án (Final)
+                                        </>
+                                    )}
+                                </button>
+                            ) : (
+                                /* Step 2: After save, show Compare button */
+                                <>
+                                    <span className="flex items-center gap-2 text-emerald-600 font-semibold px-4 py-2 bg-emerald-50 rounded-lg border border-emerald-200">
+                                        <Check className="w-5 h-5" />
+                                        Đã lưu bệnh án
+                                    </span>
+                                    <button
+                                        type="submit"
+                                        className="bg-indigo-600 text-white px-6 py-3 rounded-xl hover:bg-indigo-700 transition shadow-lg flex items-center gap-2 font-bold"
+                                    >
+                                        <Calculator className="w-5 h-5" />
+                                        So sánh & Phân tích
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </form>
                 </div>
@@ -201,7 +299,7 @@ export default function MatchingEngine({ sessionId, medicalRecordId, aiSoap, aiI
                     <div>
                         <h2 className="text-xl font-bold flex items-center gap-2">
                             <Activity className="w-6 h-6 text-green-400" />
-                            Kết quả Đối chiếu (AI vs Doctor)
+                            Kết quả Đối chiếu (Medical Assistant và Bác sĩ)
                         </h2>
                         <p className="text-gray-400 text-sm mt-1">Đánh giá độ chính xác của AI dựa trên quyết định của bác sĩ</p>
                     </div>

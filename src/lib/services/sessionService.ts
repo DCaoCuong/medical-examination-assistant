@@ -360,6 +360,82 @@ export async function getMedicalRecordBySession(
     return results[0] ? (results[0] as MedicalRecord) : null;
 }
 
+/**
+ * Get medical record by booking ID (for viewing completed examinations)
+ * Returns booking info, session, and medical record
+ */
+export async function getMedicalRecordByBookingId(bookingId: string): Promise<{
+    booking: {
+        id: string;
+        displayId: string | null;
+        patientName: string;
+        patientPhone: string;
+        age: number | null;
+        gender: string | null;
+        symptoms: string | null;
+        address: string | null;
+        medicalHistory: string | null;
+        allergies: string | null;
+        bloodType: string | null;
+        bookingTime: Date;
+        status: string | null;
+    };
+    session: Session;
+    medicalRecord: MedicalRecord;
+} | null> {
+    // Get session for this booking
+    const sessionResults = await db
+        .select({
+            session: examinationSessions,
+            booking: bookings
+        })
+        .from(examinationSessions)
+        .leftJoin(bookings, eq(examinationSessions.bookingId, bookings.id))
+        .where(eq(examinationSessions.bookingId, bookingId))
+        .orderBy(desc(examinationSessions.createdAt))
+        .limit(1);
+
+    if (!sessionResults[0] || !sessionResults[0].booking) {
+        return null;
+    }
+
+    const { session, booking } = sessionResults[0];
+
+    // Get medical record for this session
+    const recordResults = await db
+        .select()
+        .from(medicalRecords)
+        .where(eq(medicalRecords.sessionId, session.id))
+        .limit(1);
+
+    if (!recordResults[0]) {
+        return null;
+    }
+
+    return {
+        booking: {
+            id: booking.id,
+            displayId: booking.displayId,
+            patientName: booking.patientName,
+            patientPhone: booking.patientPhone,
+            age: booking.age,
+            gender: booking.gender,
+            symptoms: booking.symptoms,
+            address: booking.address,
+            medicalHistory: booking.medicalHistory,
+            allergies: booking.allergies,
+            bloodType: booking.bloodType,
+            bookingTime: booking.bookingTime,
+            status: booking.status,
+        },
+        session: {
+            ...session,
+            status: session.status as 'active' | 'completed' | 'cancelled'
+        } as Session,
+        medicalRecord: recordResults[0] as MedicalRecord,
+    };
+}
+
 // ============= Internal Helpers =============
 
 /**
