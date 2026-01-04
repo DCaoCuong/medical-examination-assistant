@@ -214,14 +214,13 @@ export default function DashboardPage() {
                             <table className="w-full">
                                 <thead className="bg-slate-100 border-b border-slate-200">
                                     <tr>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Mã lịch</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tên bệnh nhân</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Tuổi/Giới tính</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">SĐT</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Thời gian đặt</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Đang chờ</th>
-                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700">Trạng thái</th>
-                                        <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700">Thao tác</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Mã lịch</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Tên bệnh nhân</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Tuổi/Giới tính</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">SĐT</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Thời gian đặt</th>
+                                        <th className="px-6 py-3 text-left text-sm font-semibold text-slate-700 whitespace-nowrap">Trạng thái</th>
+                                        <th className="px-6 py-3 text-center text-sm font-semibold text-slate-700 whitespace-nowrap">Thao tác</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -258,13 +257,6 @@ export default function DashboardPage() {
                                                 <div className="text-xs text-slate-400">
                                                     {new Date(booking.bookingTime).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}
                                                 </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <UrgencyBadge
-                                                    bookingTime={booking.bookingTime}
-                                                    hasSession={booking.hasSession}
-                                                    sessionStatus={booking.sessionStatus}
-                                                />
                                             </td>
                                             <td className="px-6 py-4">
                                                 <BookingStatusBadge
